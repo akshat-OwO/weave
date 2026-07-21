@@ -1,0 +1,13 @@
+{
+  "name": "cli",
+  "private": true,
+  "type": "module",
+  "module": "index.ts",
+  "scripts": {
+    "dev": "bun watch src/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:types",
+    "typescript": "catalog:types"
+  }
+}
