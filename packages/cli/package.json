@@ -1,10 +1,16 @@
 {
-  "name": "cli",
+  "name": "@weave/cli",
   "private": true,
   "type": "module",
   "module": "index.ts",
   "scripts": {
-    "dev": "bun watch src/index.ts"
+    "start": "bun scripts/start.ts",
+    "build": "bun scripts/build.ts",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "catalog:effect",
+    "effect": "catalog:effect"
   },
   "devDependencies": {
     "@types/bun": "catalog:types",
