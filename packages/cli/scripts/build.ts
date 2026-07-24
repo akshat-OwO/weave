@@ -4,17 +4,30 @@ import { Effect, Context, Console } from "effect";
 
 const CliBuilder = Context.Service<{
   build: (
-    target: Bun.CompileBuildOptions["target"]
+    target: Bun.CompileBuildOptions["target"],
+    runtimePath: string
   ) => Effect.Effect<BuildOutput, Cause.UnknownError>;
 }>("weave/cli/scripts/build/cliBuilder");
 
-const buildConf = (target: Bun.CompileBuildOptions["target"]) =>
+const buildConf = (
+  target: Bun.CompileBuildOptions["target"],
+  runtimePath: string
+) =>
   ({
     compile: {
       outfile: `./out/weave-${target}`,
       target,
     },
-    entrypoints: ["src/index.ts"],
+    entrypoints: ["./src/index.ts"],
+    files: {
+      [Bun.resolveSync("../src/runtime.ts", import.meta.dir)]: `
+        import runtimePath from ${JSON.stringify(
+          Bun.resolveSync(runtimePath, import.meta.dir)
+        )} with { type: "file" };
+
+        export default runtimePath;
+      `,
+    },
     minify: true,
     sourcemap: "linked",
     throw: false,
@@ -29,12 +42,21 @@ const TARGETS = [
   "bun-darwin-arm64",
 ] as const;
 
+const RUNTIMES: Record<(typeof TARGETS)[number], string> = {
+  "bun-darwin-arm64": "../assets/runtimes/lima-2.2.0-Darwin-arm64.tar.gz",
+  "bun-darwin-x64": "../assets/runtimes/lima-2.2.0-Darwin-x86_64.tar.gz",
+  "bun-linux-arm64": "../assets/runtimes/lima-2.2.0-Linux-aarch64.tar.gz",
+  "bun-linux-x64": "../assets/runtimes/lima-2.2.0-Linux-x86_64.tar.gz",
+  "bun-windows-arm64": "../assets/runtimes/lima-2.2.0-Windows-ARM64.zip",
+  "bun-windows-x64": "../assets/runtimes/lima-2.2.0-Windows-AMD64.zip",
+} as const;
+
 const CliBuilderLive = Context.make(CliBuilder, {
-  build: (target) =>
+  build: (target, runtimePath) =>
     Effect.gen(function* builder() {
       yield* Console.log(`Building for ${target}...`);
       const result = yield* Effect.tryPromise(() =>
-        Bun.build(buildConf(target))
+        Bun.build(buildConf(target, runtimePath))
       );
 
       if (result.success) {
@@ -52,9 +74,13 @@ const CliBuilderLive = Context.make(CliBuilder, {
 const program = Effect.gen(function* handler() {
   const cliBuilder = yield* CliBuilder;
 
-  return yield* Effect.forEach(TARGETS, (target) => cliBuilder.build(target), {
-    concurrency: 1,
-  });
+  return yield* Effect.forEach(
+    TARGETS,
+    (target) => cliBuilder.build(target, RUNTIMES[target]),
+    {
+      concurrency: 1,
+    }
+  );
 }).pipe(Effect.provide(CliBuilderLive));
 
 await Effect.runPromise(program);
