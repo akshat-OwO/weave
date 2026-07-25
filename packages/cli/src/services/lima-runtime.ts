@@ -6,9 +6,14 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { UserConfig, UserConfigLive } from "./user-config";
 
+interface RunOptions {
+  readonly acceptableExitCodes?: readonly number[];
+}
+
 export const LimaRuntime = Context.Service<{
   run: (
-    args: readonly string[]
+    args: readonly string[],
+    options?: RunOptions
   ) => Effect.Effect<void, PlatformError.PlatformError, never>;
 }>("weave/services/limaRuntime");
 
@@ -19,7 +24,7 @@ export const LimaRuntimeLive = Layer.effect(
     const process = yield* ChildProcessSpawner.ChildProcessSpawner;
 
     return LimaRuntime.of({
-      run: (args) =>
+      run: (args, options) =>
         Effect.gen(function* runHandler() {
           const command = ChildProcess.make(userConfig.lima.executable, args, {
             env: {
@@ -39,8 +44,9 @@ export const LimaRuntimeLive = Layer.effect(
           });
 
           const exitCode = yield* process.exitCode(command);
+          const acceptableExitCodes = options?.acceptableExitCodes ?? [0];
 
-          if (exitCode !== 0) {
+          if (!acceptableExitCodes.includes(exitCode)) {
             return yield* Effect.die(`Command exited with code ${exitCode}`);
           }
         }),
