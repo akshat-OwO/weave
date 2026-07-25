@@ -26,5 +26,7 @@ it.effect(
           ],
         },
       ]);
+      expect(harness.stdout).toEqual([]);
+      expect(harness.stderr).toEqual([]);
     })
 );

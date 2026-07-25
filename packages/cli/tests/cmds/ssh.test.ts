@@ -17,5 +17,7 @@ it.effect(
           args: ["shell", "dev"],
         },
       ]);
+      expect(harness.stdout).toEqual([]);
+      expect(harness.stderr).toEqual([]);
     })
 );

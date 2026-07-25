@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Clock, Console, Effect } from "effect";
 import { Argument, Command } from "effect/unstable/cli";
 
 import { VmName } from "../schemas/vm-name.schema";
@@ -14,8 +14,20 @@ export const kill = Command.make(
   },
   ({ name }) =>
     Effect.gen(function* killHandler() {
+      const startedAt = yield* Clock.currentTimeMillis;
       const lima = yield* LimaRuntime;
-      yield* lima.run(["delete", "--force", "--tty=false", name]);
+      yield* lima.run(["delete", "--force", "--tty=false", name], {
+        progress: {
+          failureMessage: `Failed to delete ${name}`,
+          initialMessage: `Deleting ${name}…`,
+        },
+      });
+      const finishedAt = yield* Clock.currentTimeMillis;
+      const elapsedSeconds = Math.max(
+        0,
+        Math.round((finishedAt - startedAt) / 1000)
+      );
+      yield* Console.log(`✔ Deleted ${name} in ${elapsedSeconds}s`);
     })
 ).pipe(
   Command.withDescription("Permanently delete a Lima VM"),

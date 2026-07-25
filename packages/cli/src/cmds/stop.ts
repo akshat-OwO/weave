@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Clock, Console, Effect } from "effect";
 import { Argument, Command } from "effect/unstable/cli";
 
 import { VmName } from "../schemas/vm-name.schema";
@@ -14,8 +14,20 @@ export const stop = Command.make(
   },
   ({ name }) =>
     Effect.gen(function* stopHandler() {
+      const startedAt = yield* Clock.currentTimeMillis;
       const lima = yield* LimaRuntime;
-      yield* lima.run(["stop", "--tty=false", name]);
+      yield* lima.run(["stop", "--tty=false", name], {
+        progress: {
+          failureMessage: `Failed to stop ${name}`,
+          initialMessage: `Stopping ${name}…`,
+        },
+      });
+      const finishedAt = yield* Clock.currentTimeMillis;
+      const elapsedSeconds = Math.max(
+        0,
+        Math.round((finishedAt - startedAt) / 1000)
+      );
+      yield* Console.log(`✔ Stopped ${name} in ${elapsedSeconds}s`);
     })
 ).pipe(
   Command.withDescription("Stop a running Lima VM without deleting it"),

@@ -13,7 +13,13 @@ it.effect("kill permanently deletes the named VM", () =>
       {
         acceptableExitCodes: undefined,
         args: ["delete", "--force", "--tty=false", "dev"],
+        progress: {
+          failureMessage: "Failed to delete dev",
+          initialMessage: "Deleting dev…",
+        },
       },
     ]);
+    expect(harness.stdout).toEqual(["✔ Deleted dev in 0s"]);
+    expect(harness.stderr).toEqual([]);
   })
 );

@@ -1,6 +1,14 @@
 import path from "node:path";
 
-import { Console, Effect, FileSystem, Match, Option, Schema } from "effect";
+import {
+  Clock,
+  Console,
+  Effect,
+  FileSystem,
+  Match,
+  Option,
+  Schema,
+} from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -128,6 +136,7 @@ export const create = Command.make(
   { cpus, name, template, ttl },
   ({ cpus: cpuCount, name: vmName, template: vmTemplate, ttl: vmTtl }) =>
     Effect.gen(function* createHandler() {
+      const startedAt = yield* Clock.currentTimeMillis;
       const fs = yield* FileSystem.FileSystem;
       const lima = yield* LimaRuntime;
       const processSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -177,7 +186,12 @@ export const create = Command.make(
           ...cpuArguments,
           vmName,
         ]);
-        yield* lima.run(["start", "--tty=false", vmName]);
+        yield* lima.run(["start", "--tty=false", vmName], {
+          progress: {
+            failureMessage: "Failed to start virtual machine",
+            initialMessage: "Starting virtual machine…",
+          },
+        });
       } else {
         const newVmCpuCount = Option.isSome(cpuCount)
           ? cpuCount.value
@@ -187,23 +201,38 @@ export const create = Command.make(
           ? [yield* resolveVmTemplate(vmTemplate.value, userConfig.configPath)]
           : [];
         yield* ensureWindowsQemuAvailable;
-        yield* lima.run([
-          "start",
-          "--tty=false",
-          `--name=${vmName}`,
-          `--cpus=${newVmCpuCount}`,
-          "--mount-none",
-          ...platformCreateArguments,
-          ...nestedArguments,
-          ...templateArguments,
-        ]);
+        yield* lima.run(
+          [
+            "start",
+            "--tty=false",
+            `--name=${vmName}`,
+            `--cpus=${newVmCpuCount}`,
+            "--mount-none",
+            ...platformCreateArguments,
+            ...nestedArguments,
+            ...templateArguments,
+          ],
+          {
+            progress: {
+              failureMessage: "Failed to start virtual machine",
+              initialMessage: "Starting virtual machine…",
+            },
+          }
+        );
       }
 
       const expireCommand = `nohup sh -c 'sleep ${vmTtl.seconds}; sudo poweroff' >/dev/null 2>&1 </dev/null &`;
       yield* lima.run(["shell", vmName, "--", "sh", "-lc", expireCommand]);
 
       const action = exists ? "Started" : "Created";
-      yield* Console.log(`${action} ${vmName} (TTL: ${vmTtl.value})`);
+      const finishedAt = yield* Clock.currentTimeMillis;
+      const elapsedSeconds = Math.max(
+        0,
+        Math.round((finishedAt - startedAt) / 1000)
+      );
+      yield* Console.log(
+        `✔ ${action} ${vmName} in ${elapsedSeconds}s (TTL: ${vmTtl.value})`
+      );
     })
 ).pipe(
   Command.withDescription(

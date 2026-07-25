@@ -1,6 +1,7 @@
 import * as BunPath from "@effect/platform-bun/BunPath";
 import * as BunTerminal from "@effect/platform-bun/BunTerminal";
 import { Effect, FileSystem, Layer, Stdio, Stream } from "effect";
+import { TestConsole } from "effect/testing";
 import { Command } from "effect/unstable/cli";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import type { ChildProcess } from "effect/unstable/process";
@@ -12,11 +13,18 @@ import { UserConfig } from "../../src/services/user-config";
 export interface LimaCall {
   readonly args: readonly string[];
   readonly acceptableExitCodes?: readonly number[];
+  readonly captured?: boolean;
+  readonly progress?: {
+    readonly failureMessage: string;
+    readonly initialMessage: string;
+  };
 }
 
 export interface CliHarness {
   readonly calls: LimaCall[];
   readonly processCalls: ChildProcess.Command[];
+  readonly stderr: string[];
+  readonly stdout: string[];
   readonly run: (
     args: readonly string[]
   ) => Effect.Effect<void, unknown, never>;
@@ -24,6 +32,10 @@ export interface CliHarness {
 
 interface CliHarnessOptions {
   readonly existingVm?: boolean;
+  readonly limaOutputs?: readonly {
+    readonly stderr: string;
+    readonly stdout: string;
+  }[];
   readonly processOutputs?: readonly string[];
 }
 
@@ -32,16 +44,25 @@ const limaHome = `${configPath}/lima-home`;
 
 export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
   const calls: LimaCall[] = [];
+  const limaOutputs = [...(options.limaOutputs ?? [])];
   const processCalls: ChildProcess.Command[] = [];
   const processOutputs = [...(options.processOutputs ?? [])];
+  const stderr: string[] = [];
+  const stdout: string[] = [];
 
   const lima = LimaRuntime.of({
     assertIsolated: () => Effect.void,
+    capture: (args) =>
+      Effect.sync(() => {
+        calls.push({ args, captured: true });
+        return limaOutputs.shift() ?? { stderr: "", stdout: "" };
+      }),
     run: (args, runOptions) =>
       Effect.sync(() => {
         calls.push({
           acceptableExitCodes: runOptions?.acceptableExitCodes,
           args,
+          progress: runOptions?.progress,
         });
       }),
   });
@@ -74,19 +95,32 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
   });
 
   const run = (args: readonly string[]) =>
-    Command.runWith(weave, { version: "0.0.0" })(args).pipe(
-      Effect.provideService(LimaRuntime, lima),
-      Effect.provideService(UserConfig, userConfig),
-      Effect.provideService(FileSystem.FileSystem, fileSystem),
-      Effect.provideService(
-        ChildProcessSpawner.ChildProcessSpawner,
-        processSpawner
-      ),
-      Effect.provide(
-        Layer.mergeAll(BunPath.layer, BunTerminal.layer, Stdio.layerTest({}))
-      ),
-      Effect.mapError((error) => error as unknown)
-    );
+    Effect.gen(function* runHandler() {
+      const initialLogCount = (yield* TestConsole.logLines).length;
+      const initialErrorCount = (yield* TestConsole.errorLines).length;
+      const captureOutput = Effect.gen(function* captureOutputHandler() {
+        const logs = yield* TestConsole.logLines;
+        const errors = yield* TestConsole.errorLines;
 
-  return { calls, processCalls, run };
+        stdout.push(...logs.slice(initialLogCount).map(String));
+        stderr.push(...errors.slice(initialErrorCount).map(String));
+      });
+
+      return yield* Command.runWith(weave, { version: "0.0.0" })(args).pipe(
+        Effect.provideService(LimaRuntime, lima),
+        Effect.provideService(UserConfig, userConfig),
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(
+          ChildProcessSpawner.ChildProcessSpawner,
+          processSpawner
+        ),
+        Effect.provide(
+          Layer.mergeAll(BunPath.layer, BunTerminal.layer, Stdio.layerTest({}))
+        ),
+        Effect.mapError((error) => error as unknown),
+        Effect.ensuring(captureOutput)
+      );
+    });
+
+  return { calls, processCalls, run, stderr, stdout };
 };

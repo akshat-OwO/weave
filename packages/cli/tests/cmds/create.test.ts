@@ -27,6 +27,10 @@ describe("create", () => {
           "--mount-none",
         ])
       );
+      expect(harness.calls[0]?.progress).toEqual({
+        failureMessage: "Failed to start virtual machine",
+        initialMessage: "Starting virtual machine…",
+      });
       expect(
         harness.calls[0]?.args.some((arg) => arg.startsWith("--cpus="))
       ).toBe(true);
@@ -38,6 +42,8 @@ describe("create", () => {
         "-lc",
         "nohup sh -c 'sleep 600; sudo poweroff' >/dev/null 2>&1 </dev/null &",
       ]);
+      expect(harness.stdout).toEqual(["✔ Created dev in 0s (TTL: 10m)"]);
+      expect(harness.stderr).toEqual([]);
     })
   );
 
@@ -66,6 +72,8 @@ describe("create", () => {
         ])
       );
       expect(harness.calls[1]?.args.at(-1)).toContain("sleep 7200");
+      expect(harness.stdout).toEqual(["✔ Created dev in 0s (TTL: 2h)"]);
+      expect(harness.stderr).toEqual([]);
     })
   );
 
@@ -82,10 +90,15 @@ describe("create", () => {
         {
           acceptableExitCodes: undefined,
           args: ["edit", "--tty=false", "--mount-none", "--cpus=6", "dev"],
+          progress: undefined,
         },
         {
           acceptableExitCodes: undefined,
           args: ["start", "--tty=false", "dev"],
+          progress: {
+            failureMessage: "Failed to start virtual machine",
+            initialMessage: "Starting virtual machine…",
+          },
         },
         {
           acceptableExitCodes: undefined,
@@ -97,8 +110,11 @@ describe("create", () => {
             "-lc",
             "nohup sh -c 'sleep 30; sudo poweroff' >/dev/null 2>&1 </dev/null &",
           ],
+          progress: undefined,
         },
       ]);
+      expect(harness.stdout).toEqual(["✔ Started dev in 0s (TTL: 30s)"]);
+      expect(harness.stderr).toEqual([]);
     })
   );
 
@@ -114,6 +130,8 @@ describe("create", () => {
         name: "dev",
       });
       expect(harness.calls).toEqual([]);
+      expect(harness.stdout).toEqual([]);
+      expect(harness.stderr).toEqual([]);
     })
   );
 
@@ -130,21 +148,30 @@ describe("create", () => {
         name: "dev",
       });
       expect(harness.calls).toEqual([]);
+      expect(harness.stdout).toEqual([]);
+      expect(harness.stderr).toEqual([]);
     })
   );
 
   it.effect("rejects invalid CPU, TTL, and VM name values", () =>
     Effect.gen(function* invalidCreateValuesTest() {
-      for (const args of [
-        ["create", "dev", "--cpus", "0"],
-        ["create", "dev", "--ttl", "0m"],
-        ["create", "../dev"],
-      ]) {
+      for (const [args, validationMessage] of [
+        [
+          ["create", "dev", "--cpus", "0"],
+          "CPU count must be greater than zero",
+        ],
+        [["create", "dev", "--ttl", "0m"], "TTL must be a positive duration"],
+        [["create", "../dev"], "VM name must start with a letter or number"],
+      ] as const) {
         const harness = makeCliHarness();
         const error = yield* Effect.flip(harness.run(args));
 
         expect(error).toMatchObject({ _tag: "ShowHelp" });
         expect(harness.calls).toEqual([]);
+        expect(harness.stdout).toHaveLength(1);
+        expect(harness.stdout[0]).toContain("weave create [flags] <name>");
+        expect(harness.stderr).toHaveLength(1);
+        expect(harness.stderr[0]).toContain(validationMessage);
       }
     })
   );

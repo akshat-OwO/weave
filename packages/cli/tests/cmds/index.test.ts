@@ -1,6 +1,5 @@
 import { expect, it } from "@effect/vitest";
 import { Effect } from "effect";
-import { TestConsole } from "effect/testing";
 
 import { makeCliHarness } from "../helpers/cli";
 
@@ -8,11 +7,12 @@ it.effect("exposes help, version, every command, and the list alias", () =>
   Effect.gen(function* commandMetadataTest() {
     const versionHarness = makeCliHarness();
     yield* versionHarness.run(["--version"]);
-    expect(yield* TestConsole.logLines).toContain("weave v0.0.0");
+    expect(versionHarness.stdout).toContain("weave v0.0.0");
+    expect(versionHarness.stderr).toEqual([]);
 
     const helpHarness = makeCliHarness();
     yield* helpHarness.run(["--help"]);
-    const help = (yield* TestConsole.logLines).join("\n");
+    const help = helpHarness.stdout.join("\n");
 
     for (const name of [
       "create",
@@ -25,5 +25,6 @@ it.effect("exposes help, version, every command, and the list alias", () =>
     ]) {
       expect(help).toContain(name);
     }
+    expect(helpHarness.stderr).toEqual([]);
   })
 );
