@@ -1,157 +1,131 @@
-# Turborepo starter
+# Weave
 
-This Turborepo starter is maintained by the Turborepo core team.
+Weave is a small CLI for creating disposable, sandboxed Linux virtual machines. It wraps [Lima](https://lima-vm.io/) with secure defaults, automatic expiry, and a focused command set.
 
-## Using this example
+Each VM starts with host-directory mounts disabled, so commands run inside the guest instead of against files on the host. Weave bundles its own Lima 2.2.0 runtime and keeps its VM state separate from any system Lima installation.
 
-Run the following command:
+## Features
 
-```sh
-npx create-turbo@latest
-```
+- Disposable VMs with a configurable time to live (TTL)
+- No host directories mounted into guests
+- Built-in Node.js and Python templates
+- Support for custom Lima YAML templates
+- Interactive access and one-off command execution
+- Native executables for macOS, Linux, and Windows on x64 and ARM64
 
-## What's inside?
+## Requirements
 
-This Turborepo includes the following packages/apps:
+To work on or run Weave from source, install [Bun 1.3.14 or later](https://bun.sh/).
 
-### Apps and Packages
+The host must also support the virtualization backend used by Lima:
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+- macOS uses Virtualization.framework (`vz`).
+- Linux uses QEMU.
+- Windows uses QEMU and requires the matching `qemu-system-*` executable on `PATH`. It can instead be set with `QEMU_SYSTEM_X86_64` or `QEMU_SYSTEM_AARCH64`.
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+On Apple silicon, nested virtualization is enabled when running on an Apple M3 or later with macOS 15 or later.
 
-### Utilities
+## Run from source
 
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [Ultracite](https://www.ultracite.ai/) with Oxlint for code linting
-- [Oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+Clone the repository, install dependencies, and invoke the CLI entry point:
 
 ```sh
-cd my-turborepo
-turbo build
+bun install
+bun packages/cli/src/index.ts --help
 ```
 
-Without global `turbo`, use your package manager:
+For example, create a VM named `dev`, open a shell in it, and delete it when finished:
 
 ```sh
-cd my-turborepo
-npx turbo build
-bun dlx turbo build
-bun exec turbo build
+bun packages/cli/src/index.ts create dev
+bun packages/cli/src/index.ts ssh dev
+bun packages/cli/src/index.ts kill dev
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+To use the shorter `weave` commands shown below, build a standalone executable and place the executable for your platform from `packages/cli/out` on your `PATH`:
 
 ```sh
-turbo build --filter=docs
+bun run --cwd packages/cli build
 ```
 
-Without global `turbo`:
+The build produces executables for all supported platform and architecture combinations.
+
+## Usage
+
+Create a VM with the default 10-minute TTL:
 
 ```sh
-npx turbo build --filter=docs
-bun exec turbo build --filter=docs
-bun exec turbo build --filter=docs
+weave create dev
 ```
 
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+Customize its CPU count and TTL:
 
 ```sh
-cd my-turborepo
-turbo dev
+weave create dev --cpus 4 --ttl 1h
 ```
 
-Without global `turbo`, use your package manager:
+TTL values are a positive integer followed by `s`, `m`, `h`, or `d`. When the TTL expires, the guest shuts down but is not deleted. Running `weave create` again with the same name restarts a stopped VM and assigns it a new TTL.
+
+### Templates
+
+Create a VM with the built-in Node.js template:
 
 ```sh
-cd my-turborepo
-npx turbo dev
-bun exec turbo dev
-bun exec turbo dev
+weave create node-dev --template node
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+The `node` template installs the current Node.js LTS release through nvm. The `python` template installs Python through uv:
 
 ```sh
-turbo dev --filter=web
+weave create py-dev --template python
 ```
 
-Without global `turbo`:
+You can also provide a custom Lima YAML file:
 
 ```sh
-npx turbo dev --filter=web
-bun exec turbo dev --filter=web
-bun exec turbo dev --filter=web
+weave create custom-dev --template ./templates/custom.yaml
 ```
 
-### Remote Caching
+A template can only be supplied when creating a new VM, not when restarting an existing one.
 
-> [!TIP] Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+### Commands
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
+| Command | Description |
+| --- | --- |
+| `weave create <name> [--cpus <count>] [--ttl <duration>] [--template <name-or-path>]` | Create a new VM or restart a stopped one |
+| `weave ls` | List running and stopped VMs (`list` is an alias) |
+| `weave ssh <name>` | Open an interactive shell in a running VM |
+| `weave shell <name> "<command>"` | Run a command in a running VM |
+| `weave stop <name>` | Stop a VM without deleting it |
+| `weave kill <name>` | Permanently delete a VM |
 
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
+Run `weave <command> --help` for command-specific examples and options.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+## Data and isolation
+
+On macOS and Linux, Weave stores its bundled runtime, templates, and VM state under `~/weave`. On Windows, it uses `%APPDATA%\weave`.
+
+Weave passes `--mount-none` whenever it creates or restarts a VM. This prevents Lima from mounting host directories into the guest. VMs retain their own virtual disk when stopped and continue to have network access. Use `weave kill <name>` when the disk and its data are no longer needed.
+
+## Development
+
+The repository is a Bun workspace managed with Turborepo. The CLI lives in `packages/cli` and is implemented in TypeScript with Effect.
 
 ```sh
-cd my-turborepo
-turbo login
+# Apply formatting and safe lint fixes
+bun run fix
+
+# Check formatting and lint rules
+bun run lint
+
+# Type-check every package
+bunx turbo check-types
+
+# Test every package
+bunx turbo test
+
+# Build standalone executables
+bunx turbo build
 ```
 
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-bun exec turbo login
-bun exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-bun exec turbo link
-bun exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+Tests use Vitest and do not require starting real VMs.
