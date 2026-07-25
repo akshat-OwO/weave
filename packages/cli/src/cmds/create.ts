@@ -5,6 +5,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { resolveVmTemplate } from "../lib/vm-template";
+import { QemuNotFoundError } from "../schemas/errors/qemu-not-found.schema";
 import { TemplateOnExistingVmError } from "../schemas/errors/template-on-existing-vm.schema";
 import { VmAlreadyExistsError } from "../schemas/errors/vm-already-exists.schema";
 import { Ttl } from "../schemas/ttl.schema";
@@ -33,13 +34,29 @@ const NestedVirtualizationMacOSVersion = Schema.String.check(
 const platformCreateArguments = Match.value(process.platform).pipe(
   Match.when("darwin", () => ["--vm-type=vz"]),
   Match.when("linux", () => ["--vm-type=qemu"]),
-  Match.when("win32", () => ["--vm-type=wsl2"]),
+  Match.when("win32", () => ["--vm-type=qemu"]),
   Match.orElse(() => [])
 );
 
-const platformDefaultTemplateArguments = Match.value(process.platform).pipe(
-  Match.when("win32", () => ["template:experimental/wsl2"]),
-  Match.orElse(() => [])
+const qemuArchitecture = Match.value(process.arch).pipe(
+  Match.when("x64", () => "x86_64"),
+  Match.orElse((architecture) => architecture)
+);
+
+const ensureWindowsQemuAvailable = Effect.gen(
+  function* ensureWindowsQemuAvailableHandler() {
+    if (process.platform === "win32") {
+      const executable = `qemu-system-${qemuArchitecture}`;
+      const environmentName = `QEMU_SYSTEM_${qemuArchitecture.toUpperCase()}`;
+      const configuredExecutable = Bun.env[environmentName]?.trim();
+
+      if (configuredExecutable || Bun.which(executable)) {
+        return;
+      }
+
+      return yield* new QemuNotFoundError({ executable });
+    }
+  }
 );
 
 const nestedVirtualizationArguments = Effect.gen(
@@ -122,6 +139,7 @@ export const create = Command.make(
           return yield* new TemplateOnExistingVmError({ name: vmName });
         }
 
+        yield* lima.assertIsolated(vmName);
         const statusCommand = ChildProcess.make(
           userConfig.lima.executable,
           ["list", vmName, "--format={{.Status}}"],
@@ -148,14 +166,17 @@ export const create = Command.make(
           return yield* new VmAlreadyExistsError({ name: vmName });
         }
 
-        if (Option.isSome(cpuCount)) {
-          yield* lima.run([
-            "edit",
-            "--tty=false",
-            `--cpus=${cpuCount.value}`,
-            vmName,
-          ]);
-        }
+        const cpuArguments = Option.isSome(cpuCount)
+          ? [`--cpus=${cpuCount.value}`]
+          : [];
+        yield* ensureWindowsQemuAvailable;
+        yield* lima.run([
+          "edit",
+          "--tty=false",
+          "--mount-none",
+          ...cpuArguments,
+          vmName,
+        ]);
         yield* lima.run(["start", "--tty=false", vmName]);
       } else {
         const newVmCpuCount = Option.isSome(cpuCount)
@@ -164,12 +185,14 @@ export const create = Command.make(
         const nestedArguments = yield* nestedVirtualizationArguments;
         const templateArguments = Option.isSome(vmTemplate)
           ? [yield* resolveVmTemplate(vmTemplate.value, userConfig.configPath)]
-          : platformDefaultTemplateArguments;
+          : [];
+        yield* ensureWindowsQemuAvailable;
         yield* lima.run([
           "start",
           "--tty=false",
           `--name=${vmName}`,
           `--cpus=${newVmCpuCount}`,
+          "--mount-none",
           ...platformCreateArguments,
           ...nestedArguments,
           ...templateArguments,
@@ -183,7 +206,9 @@ export const create = Command.make(
       yield* Console.log(`${action} ${vmName} (TTL: ${vmTtl.value})`);
     })
 ).pipe(
-  Command.withDescription("Create and start a Lima VM"),
+  Command.withDescription(
+    "Create and start an isolated VM with no host directories mounted"
+  ),
   Command.withExamples([
     {
       command: "weave create dev",

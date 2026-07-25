@@ -17,6 +17,7 @@ export const ssh = Command.make(
   ({ name }) =>
     Effect.gen(function* sshHandler() {
       const lima = yield* LimaRuntime;
+      yield* lima.assertIsolated(name);
       yield* lima.run(["shell", name], {
         acceptableExitCodes: ACCEPTABLE_EXIT_CODES,
       });

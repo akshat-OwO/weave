@@ -2,9 +2,7 @@ import path from "node:path";
 
 import { Effect, FileSystem } from "effect";
 
-import nodeWsl2TemplateAsset from "../../templates/node-wsl2.yaml" with { type: "file" };
 import nodeTemplateAsset from "../../templates/node.yaml" with { type: "file" };
-import pythonWsl2TemplateAsset from "../../templates/python-wsl2.yaml" with { type: "file" };
 import pythonTemplateAsset from "../../templates/python.yaml" with { type: "file" };
 import { InvalidVmTemplateError } from "../schemas/errors/invalid-vm-template.schema";
 
@@ -17,12 +15,8 @@ const isPredefinedTemplateName = (
   PREDEFINED_TEMPLATE_NAMES.some((name) => name === template);
 
 const predefinedTemplateAssets: Record<PredefinedTemplateName, string> = {
-  node:
-    process.platform === "win32" ? nodeWsl2TemplateAsset : nodeTemplateAsset,
-  python:
-    process.platform === "win32"
-      ? pythonWsl2TemplateAsset
-      : pythonTemplateAsset,
+  node: nodeTemplateAsset,
+  python: pythonTemplateAsset,
 };
 
 const materializePredefinedTemplate = Effect.fn(

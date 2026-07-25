@@ -18,7 +18,17 @@ export const shell = Command.make(
   ({ name, shellCommand }) =>
     Effect.gen(function* shellHandler() {
       const lima = yield* LimaRuntime;
-      yield* lima.run(["shell", name, "--", "sh", "-lc", shellCommand]);
+      yield* lima.assertIsolated(name);
+      yield* lima.run([
+        "shell",
+        name,
+        "--",
+        "sh",
+        "-lc",
+        'shell="$SHELL"; test -n "$shell" || shell=/bin/sh; exec "$shell" -lic "$1"',
+        "weave-shell",
+        shellCommand,
+      ]);
     })
 ).pipe(
   Command.withDescription("Run a shell command in a Lima VM"),
