@@ -1,12 +1,14 @@
 import { BunRuntime, BunServices } from "@effect/platform-bun";
-import { Console, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { Command } from "effect/unstable/cli";
 
+import { weave } from "./cmds";
+import { LimaRuntimeLive } from "./services/lima-runtime";
 import { UserConfig, UserConfigLive } from "./services/user-config";
 
-const weave = Command.make("weave", {}, () => Console.log("hello world"));
+const DependenciesLive = Layer.merge(BunServices.layer, UserConfigLive);
 
-const AppLive = Layer.merge(BunServices.layer, UserConfigLive);
+const AppLive = LimaRuntimeLive.pipe(Layer.provideMerge(DependenciesLive));
 
 const program = Effect.gen(function* programHandler() {
   const userConfig = yield* UserConfig;

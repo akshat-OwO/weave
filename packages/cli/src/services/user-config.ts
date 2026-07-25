@@ -10,7 +10,11 @@ import { ArchiveExtractError } from "../schemas/errors/install-runtime/archive-e
 
 export const UserConfig = Context.Service<{
   configPath: string;
-  runtimePath: string;
+  lima: {
+    runtime: string;
+    executable: string;
+    home: string;
+  };
   init: () => Effect.Effect<void>;
 }>("weave/services/userConfig");
 
@@ -89,7 +93,7 @@ export const UserConfigLive = Layer.effect(
       process.platform === "win32" ? "limactl.exe" : "limactl"
     );
 
-    return {
+    return UserConfig.of({
       configPath,
       init: () =>
         Effect.gen(function* initHandler() {
@@ -115,8 +119,12 @@ export const UserConfigLive = Layer.effect(
             return Effect.die(message);
           })
         ),
-      runtimePath,
-    };
+      lima: {
+        executable: executablePath,
+        home: runtimeStatePath,
+        runtime: runtimePath,
+      },
+    });
   }).pipe(
     Effect.provide(BunFileSystem.layer),
     Effect.catch(() => Effect.die("Unknown error"))
