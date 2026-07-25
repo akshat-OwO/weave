@@ -18,7 +18,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
   decodeLimaLogLine,
   formatLimaLog,
-  limaProgressMessage,
+  limaProgressLine,
 } from "../lib/lima-progress";
 import { UnsafeVmBackendError } from "../schemas/errors/unsafe-vm-backend.schema";
 import { UserConfig, UserConfigLive } from "./user-config";
@@ -195,12 +195,20 @@ export const LimaRuntimeLive = Layer.effect(
             });
           const consumeLine = (line: string) => {
             const decoded = decodeLimaLogLine(line);
+            const progressMessage = limaProgressLine(line);
 
             if (Option.isNone(decoded)) {
-              return appendDiagnostic(line);
+              return Effect.all(
+                [
+                  appendDiagnostic(line),
+                  Option.isSome(progressMessage)
+                    ? Ref.set(message, progressMessage.value)
+                    : Effect.void,
+                ],
+                { discard: true }
+              );
             }
 
-            const progressMessage = limaProgressMessage(decoded.value.msg);
             return Effect.all(
               [
                 appendDiagnostic(formatLimaLog(decoded.value)),

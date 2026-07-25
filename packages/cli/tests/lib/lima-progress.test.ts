@@ -4,6 +4,7 @@ import { Option } from "effect";
 import {
   decodeLimaLogLine,
   formatLimaLog,
+  limaProgressLine,
   limaProgressMessage,
 } from "../../src/lib/lima-progress";
 
@@ -22,6 +23,27 @@ it("decodes and formats structured Lima logs", () => {
 });
 
 it("maps Lima readiness messages to coarse milestones", () => {
+  expect(
+    Option.getOrUndefined(
+      limaProgressMessage(
+        "Downloading the image (ubuntu-24.04-server-cloudimg-arm64.img)"
+      )
+    )
+  ).toBe("Downloading Ubuntu image…");
+  expect(
+    Option.getOrUndefined(
+      limaProgressMessage(
+        "Decompressing the image (ubuntu-24.04-server-cloudimg-arm64.img)"
+      )
+    )
+  ).toBe("Preparing VM image…");
+  expect(
+    Option.getOrUndefined(
+      limaProgressMessage(
+        'Converting the image to raw sparse format in cache: "/tmp/image"'
+      )
+    )
+  ).toBe("Preparing VM image…");
   expect(
     Option.getOrUndefined(
       limaProgressMessage(
@@ -57,4 +79,29 @@ it("maps Lima readiness messages to coarse milestones", () => {
 it("ignores malformed and unrelated Lima logs", () => {
   expect(Option.isNone(decodeLimaLogLine("not json"))).toBe(true);
   expect(Option.isNone(limaProgressMessage("Forwarding TCP"))).toBe(true);
+});
+
+it("maps both plain downloader output and structured logs", () => {
+  expect(
+    Option.getOrUndefined(
+      limaProgressLine(
+        "Downloading the image (ubuntu-24.04-server-cloudimg-arm64.img)"
+      )
+    )
+  ).toBe("Downloading Ubuntu image…");
+  expect(
+    Option.getOrUndefined(
+      limaProgressLine(
+        '{"level":"info","msg":"Decompressing the image","time":"now"}'
+      )
+    )
+  ).toBe("Preparing VM image…");
+  expect(
+    Option.getOrUndefined(
+      limaProgressLine(
+        '{"level":"info","msg":"Guest agent is running","time":"now"}'
+      )
+    )
+  ).toBe("Starting guest services…");
+  expect(Option.isNone(limaProgressLine("42.1 MiB / 250 MiB"))).toBe(true);
 });

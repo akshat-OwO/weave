@@ -12,6 +12,18 @@ export type LimaLog = typeof LimaLog.Type;
 export const decodeLimaLogLine = Schema.decodeUnknownOption(LimaLogLine);
 
 export const limaProgressMessage = (message: string): Option.Option<string> => {
+  if (message.includes("Downloading ")) {
+    return Option.some("Downloading Ubuntu image…");
+  }
+
+  if (
+    message.includes("Decompressing ") ||
+    (message.includes("Converting ") &&
+      message.includes(" image to raw sparse format"))
+  ) {
+    return Option.some("Preparing VM image…");
+  }
+
   if (message.includes("user session is ready for ssh")) {
     return Option.some("Waiting for SSH…");
   }
@@ -37,6 +49,17 @@ export const limaProgressMessage = (message: string): Option.Option<string> => {
   }
 
   return Option.none();
+};
+
+export const limaProgressLine = (line: string): Option.Option<string> => {
+  const decoded = decodeLimaLogLine(line);
+
+  return limaProgressMessage(
+    Option.match(decoded, {
+      onNone: () => line,
+      onSome: (log) => log.msg,
+    })
+  );
 };
 
 export const formatLimaLog = (log: LimaLog): string =>

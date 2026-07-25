@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
-import { Console, Context, Effect, FileSystem, Layer, Match } from "effect";
+import { Context, Effect, FileSystem, Layer, Match } from "effect";
 
 import runtimeAssetPath from "../runtime";
 import { ArchiveBytesError } from "../schemas/errors/install-runtime/archive-bytes.schema";
@@ -63,7 +63,6 @@ const installRuntime = Effect.fn(
 
   yield* fs.makeDirectory(paths.runtimeState, { recursive: true });
 
-  yield* Console.log("Installing lima...");
   const archiveBytes = yield* Effect.tryPromise({
     catch: () => new ArchiveBytesError(),
     try: () => Bun.file(runtimeAssetPath).bytes(),
