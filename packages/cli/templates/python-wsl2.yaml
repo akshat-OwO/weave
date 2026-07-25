@@ -1,0 +1,38 @@
+minimumLimaVersion: 2.2.0
+
+base:
+  - template:experimental/wsl2
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y ca-certificates curl
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      uv_bin="${HOME}/.local/bin/uv"
+
+      if [ ! -x "${uv_bin}" ]; then
+        curl -LsSf https://astral.sh/uv/install.sh |
+          env UV_INSTALL_DIR="${HOME}/.local/bin" UV_NO_MODIFY_PATH=1 sh
+      fi
+
+      "${uv_bin}" python install --default
+
+      if ! grep -Fq 'export PATH="$HOME/.local/bin:$PATH"' "${HOME}/.profile" 2>/dev/null; then
+        printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"${HOME}/.profile"
+      fi
+
+probes:
+  - script: |
+      #!/bin/bash
+      export PATH="${HOME}/.local/bin:${PATH}"
+      uv --version
+      python --version
+    hint: Python could not be installed with uv.

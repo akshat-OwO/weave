@@ -4,6 +4,8 @@ import { Console, Effect, FileSystem, Match, Option, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
+import { resolveVmTemplate } from "../lib/vm-template";
+import { TemplateOnExistingVmError } from "../schemas/errors/template-on-existing-vm.schema";
 import { VmAlreadyExistsError } from "../schemas/errors/vm-already-exists.schema";
 import { Ttl } from "../schemas/ttl.schema";
 import { VmName } from "../schemas/vm-name.schema";
@@ -31,7 +33,12 @@ const NestedVirtualizationMacOSVersion = Schema.String.check(
 const platformCreateArguments = Match.value(process.platform).pipe(
   Match.when("darwin", () => ["--vm-type=vz"]),
   Match.when("linux", () => ["--vm-type=qemu"]),
-  Match.when("win32", () => ["--vm-type=wsl2", "template:experimental/wsl2"]),
+  Match.when("win32", () => ["--vm-type=wsl2"]),
+  Match.orElse(() => [])
+);
+
+const platformDefaultTemplateArguments = Match.value(process.platform).pipe(
+  Match.when("win32", () => ["template:experimental/wsl2"]),
   Match.orElse(() => [])
 );
 
@@ -86,6 +93,14 @@ const cpus = Flag.integer("cpus").pipe(
   )
 );
 
+const template = Flag.string("template").pipe(
+  Flag.optional,
+  Flag.withMetavar("NAME_OR_PATH"),
+  Flag.withDescription(
+    'VM template: predefined "node" or "python", or a path to a Lima YAML file'
+  )
+);
+
 const name = Argument.string("name").pipe(
   Argument.withSchema(VmName),
   Argument.withDescription("Unique name for the VM")
@@ -93,8 +108,8 @@ const name = Argument.string("name").pipe(
 
 export const create = Command.make(
   "create",
-  { cpus, name, ttl },
-  ({ cpus: cpuCount, name: vmName, ttl: vmTtl }) =>
+  { cpus, name, template, ttl },
+  ({ cpus: cpuCount, name: vmName, template: vmTemplate, ttl: vmTtl }) =>
     Effect.gen(function* createHandler() {
       const fs = yield* FileSystem.FileSystem;
       const lima = yield* LimaRuntime;
@@ -103,6 +118,10 @@ export const create = Command.make(
       const exists = yield* fs.exists(path.join(userConfig.lima.home, vmName));
 
       if (exists) {
+        if (Option.isSome(vmTemplate)) {
+          return yield* new TemplateOnExistingVmError({ name: vmName });
+        }
+
         const statusCommand = ChildProcess.make(
           userConfig.lima.executable,
           ["list", vmName, "--format={{.Status}}"],
@@ -143,6 +162,9 @@ export const create = Command.make(
           ? cpuCount.value
           : yield* defaultCpuCount;
         const nestedArguments = yield* nestedVirtualizationArguments;
+        const templateArguments = Option.isSome(vmTemplate)
+          ? [yield* resolveVmTemplate(vmTemplate.value, userConfig.configPath)]
+          : platformDefaultTemplateArguments;
         yield* lima.run([
           "start",
           "--tty=false",
@@ -150,6 +172,7 @@ export const create = Command.make(
           `--cpus=${newVmCpuCount}`,
           ...platformCreateArguments,
           ...nestedArguments,
+          ...templateArguments,
         ]);
       }
 
@@ -169,6 +192,14 @@ export const create = Command.make(
     {
       command: "weave create dev --cpus 4 --ttl 1h",
       description: "Create a named VM with custom CPUs and TTL",
+    },
+    {
+      command: "weave create dev --template node",
+      description: "Create a VM with Node.js installed through nvm",
+    },
+    {
+      command: "weave create dev --template ./templates/custom.yaml",
+      description: "Create a VM from a custom Lima YAML template",
     },
   ])
 );
