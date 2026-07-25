@@ -13,7 +13,9 @@
       },
       "effect": {
         "effect": "^4.0.0-beta.100",
-        "@effect/platform-bun": "^4.0.0-beta.100"
+        "@effect/platform-bun": "^4.0.0-beta.100",
+        "@effect/vitest": "4.0.0-beta.100",
+        "vitest": "4.1.10"
       }
     }
   },

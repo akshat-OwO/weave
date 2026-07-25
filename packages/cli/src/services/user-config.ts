@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 
-import { BunFileSystem } from "@effect/platform-bun";
+import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import { Console, Context, Effect, FileSystem, Layer, Match } from "effect";
 
 import runtimeAssetPath from "../runtime";

@@ -6,14 +6,17 @@
   "scripts": {
     "start": "bun scripts/start.ts",
     "build": "bun scripts/build.ts",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@effect/platform-bun": "catalog:effect",
     "effect": "catalog:effect"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:effect",
     "@types/bun": "catalog:types",
-    "typescript": "catalog:types"
+    "typescript": "catalog:types",
+    "vitest": "catalog:effect"
   }
 }

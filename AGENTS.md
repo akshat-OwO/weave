@@ -17,6 +17,7 @@ After every change, run all of the following:
 bun run fix
 bun run lint
 bunx turbo check-types
+bunx turbo test
 ```
 
-Run Ultracite's auto-fix first, then its read-only quality check. Type-check through Turbo so every project runs its own `check-types` script. Do not consider a change complete until the fix has been applied and both Ultracite's check and all project-specific TypeScript type checks pass.
+Run Ultracite's auto-fix first, then its read-only quality check. Type-check through Turbo so every project runs its own `check-types` script. Do not consider a change complete until the fix has been applied and both Ultracite's check and all project-specific TypeScript type checks pass. Run tests through Turbo so every project runs its own `test` script. Do not consider a change complete until all tests pass.
