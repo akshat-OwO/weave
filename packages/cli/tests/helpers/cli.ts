@@ -4,30 +4,28 @@ import { Effect, FileSystem, Layer, Stdio, Stream } from "effect";
 import { TestConsole } from "effect/testing";
 import { Command } from "effect/unstable/cli";
 import { ChildProcessSpawner } from "effect/unstable/process";
-import type { ChildProcess } from "effect/unstable/process";
 
 import { weave } from "../../src/cmds";
-import { vmTtlMetadataPath } from "../../src/lib/vm-ttl";
-import { LimaRuntime } from "../../src/services/lima-runtime";
-import { UserConfig } from "../../src/services/user-config";
+import type {
+  CreateVmRequest,
+  VmListItem,
+} from "../../src/services/vm-manager";
+import { VmManager } from "../../src/services/vm-manager";
 
-export interface LimaCall {
-  readonly args: readonly string[];
-  readonly acceptableExitCodes?: readonly number[];
-  readonly captured?: boolean;
-  readonly progress?: {
-    readonly failureMessage: string;
-    readonly initialMessage: string;
-  };
-}
+export type VmManagerCall =
+  | { readonly method: "create"; readonly request: CreateVmRequest }
+  | { readonly method: "kill"; readonly name: string }
+  | { readonly method: "list" }
+  | {
+      readonly command: string;
+      readonly method: "shell";
+      readonly name: string;
+    }
+  | { readonly method: "ssh"; readonly name: string }
+  | { readonly method: "stop"; readonly name: string };
 
 export interface CliHarness {
-  readonly calls: LimaCall[];
-  readonly fileWrites: readonly {
-    readonly contents: string;
-    readonly path: string;
-  }[];
-  readonly processCalls: ChildProcess.Command[];
+  readonly calls: VmManagerCall[];
   readonly stderr: string[];
   readonly stdout: string[];
   readonly run: (
@@ -36,97 +34,51 @@ export interface CliHarness {
 }
 
 interface CliHarnessOptions {
-  readonly existingVm?: boolean;
-  readonly limaOutputs?: readonly {
-    readonly stderr: string;
-    readonly stdout: string;
-  }[];
-  readonly processOutputs?: readonly string[];
-  readonly ttlExpiresAtByVm?: Readonly<Record<string, number>>;
+  readonly createAction?: "Created" | "Started";
+  readonly vms?: readonly VmListItem[];
 }
 
-const configPath = "/test/weave";
-const limaHome = `${configPath}/lima-home`;
-
 export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
-  const calls: LimaCall[] = [];
-  const fileWrites: {
-    readonly contents: string;
-    readonly path: string;
-  }[] = [];
-  const limaOutputs = [...(options.limaOutputs ?? [])];
-  const processCalls: ChildProcess.Command[] = [];
-  const processOutputs = [...(options.processOutputs ?? [])];
+  const calls: VmManagerCall[] = [];
   const stderr: string[] = [];
   const stdout: string[] = [];
-
-  const lima = LimaRuntime.of({
-    assertIsolated: () => Effect.void,
-    capture: (args) =>
+  const manager = VmManager.of({
+    create: (request) =>
       Effect.sync(() => {
-        calls.push({ args, captured: true });
-        return limaOutputs.shift() ?? { stderr: "", stdout: "" };
+        calls.push({ method: "create", request });
+        return options.createAction ?? "Created";
       }),
-    run: (args, runOptions) =>
+    kill: (name) =>
       Effect.sync(() => {
-        calls.push({
-          acceptableExitCodes: runOptions?.acceptableExitCodes,
-          args,
-          progress: runOptions?.progress,
-        });
+        calls.push({ method: "kill", name });
       }),
-  });
-  const userConfig = UserConfig.of({
-    configPath,
-    init: () => Effect.void,
-    lima: {
-      executable: "/test/bin/limactl",
-      home: limaHome,
-      runtime: "/test/runtime/lima",
-    },
-  });
-  const fileSystem = FileSystem.makeNoop({
-    exists: (path) => {
-      if (options.existingVm === true && path === `${limaHome}/dev`) {
-        return Effect.succeed(true);
-      }
-
-      return Effect.succeed(
-        Object.entries(options.ttlExpiresAtByVm ?? {}).some(
-          ([name]) => path === vmTtlMetadataPath(limaHome, name)
-        )
-      );
-    },
-    makeDirectory: () => Effect.void,
-    readFileString: (path) => {
-      const entry = Object.entries(options.ttlExpiresAtByVm ?? {}).find(
-        ([name]) => path === vmTtlMetadataPath(limaHome, name)
-      );
-
-      return Effect.succeed(
-        JSON.stringify({
-          expiresAt: entry?.[1],
-        })
-      );
-    },
-    writeFileString: (path, contents) =>
+    list: () =>
       Effect.sync(() => {
-        fileWrites.push({ contents, path });
+        calls.push({ method: "list" });
+        return options.vms ?? [];
+      }),
+    shell: (name, command) =>
+      Effect.sync(() => {
+        calls.push({ command, method: "shell", name });
+      }),
+    ssh: (name) =>
+      Effect.sync(() => {
+        calls.push({ method: "ssh", name });
+      }),
+    stop: (name) =>
+      Effect.sync(() => {
+        calls.push({ method: "stop", name });
       }),
   });
+  const fileSystem = FileSystem.makeNoop({});
   const processSpawner = ChildProcessSpawner.ChildProcessSpawner.of({
     exitCode: () => Effect.die("Unexpected process exitCode call"),
     lines: () => Effect.die("Unexpected process lines call"),
     spawn: () => Effect.die("Unexpected process spawn call"),
     streamLines: () => Stream.die("Unexpected process streamLines call"),
     streamString: () => Stream.die("Unexpected process streamString call"),
-    string: (command) =>
-      Effect.sync(() => {
-        processCalls.push(command);
-        return processOutputs.shift() ?? "";
-      }),
+    string: () => Effect.die("Unexpected process string call"),
   });
-
   const run = (args: readonly string[]) =>
     Effect.gen(function* runHandler() {
       const initialLogCount = (yield* TestConsole.logLines).length;
@@ -140,8 +92,7 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
       });
 
       return yield* Command.runWith(weave, { version: "0.0.0" })(args).pipe(
-        Effect.provideService(LimaRuntime, lima),
-        Effect.provideService(UserConfig, userConfig),
+        Effect.provideService(VmManager, manager),
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(
           ChildProcessSpawner.ChildProcessSpawner,
@@ -155,5 +106,5 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
       );
     });
 
-  return { calls, fileWrites, processCalls, run, stderr, stdout };
+  return { calls, run, stderr, stdout };
 };

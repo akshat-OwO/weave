@@ -14,7 +14,15 @@ describe("VmName", () => {
   });
 
   it("rejects unsafe and malformed names", () => {
-    for (const name of ["", "-dev", "_dev", ".dev", "../dev", "dev vm"]) {
+    for (const name of [
+      "",
+      "-dev",
+      "_dev",
+      ".dev",
+      "../dev",
+      "dev vm",
+      "d".repeat(65),
+    ]) {
       expect(Schema.decodeUnknownOption(VmName)(name)).toEqual(Option.none());
     }
   });
