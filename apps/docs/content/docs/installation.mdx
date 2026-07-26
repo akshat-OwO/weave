@@ -1,0 +1,49 @@
+---
+title: Installation
+description: Install the correct Weave binary for your machine.
+---
+
+## Install Weave
+
+Run the installer:
+
+<InstallCommand />
+
+The script detects your operating system and CPU architecture, downloads the matching binary from the latest GitHub release, and installs it as `weave`.
+
+Verify the installation:
+
+```sh
+weave --help
+```
+
+<Callout title="Windows">
+  Run the installer from Git Bash, MSYS2, or another POSIX-compatible shell.
+</Callout>
+
+<Callout title="Custom install directory">
+  Set `WEAVE_INSTALL_DIR` to install somewhere other than `/usr/local/bin`:
+
+<InstallCommand environment={'WEAVE_INSTALL_DIR="$HOME/.local/bin"'} />
+
+</Callout>
+
+## Host requirements
+
+Weave uses Lima's native virtualization backend:
+
+| Platform | Backend | Notes |
+| --- | --- | --- |
+| macOS | Virtualization.framework (`vz`) | Nested virtualization requires Apple M3 or later and macOS 15 or later. |
+| Linux | QEMU | Install the QEMU packages provided by your distribution. |
+| Windows | QEMU | The matching `qemu-system-*` executable must be available on `PATH`. |
+
+On Windows, you can point Weave to QEMU explicitly with `QEMU_SYSTEM_X86_64` or `QEMU_SYSTEM_AARCH64`.
+
+## Install a specific release
+
+Set `WEAVE_VERSION` to a GitHub release tag:
+
+<InstallCommand environment="WEAVE_VERSION=v0.1.0" />
+
+Continue to the [quick start](/docs/quick-start) to create your first VM.

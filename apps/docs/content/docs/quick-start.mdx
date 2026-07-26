@@ -1,0 +1,54 @@
+---
+title: Quick start
+description: Create, use, and remove your first Weave VM.
+---
+
+## Create a VM
+
+Create a VM named `dev` with the default 10-minute TTL:
+
+```sh
+weave create dev
+```
+
+Customize its CPU count, integer memory in GiB, and TTL:
+
+```sh
+weave create dev --cpus 4 --memory 8 --ttl 1h
+```
+
+TTL values are a positive integer followed by `s`, `m`, `h`, or `d`.
+
+## Connect to it
+
+Open an interactive shell:
+
+```sh
+weave ssh dev
+```
+
+Or run a one-off command:
+
+```sh
+weave shell dev "uname -a"
+```
+
+## Inspect and clean up
+
+List your VMs and their remaining TTL:
+
+```sh
+weave ls
+```
+
+Stop the VM without deleting its virtual disk:
+
+```sh
+weave stop dev
+```
+
+Restarting a stopped VM with `weave create dev` assigns it a new TTL. When you no longer need its disk or data, delete it permanently:
+
+```sh
+weave kill dev
+```

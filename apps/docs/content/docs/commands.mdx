@@ -1,0 +1,63 @@
+---
+title: Commands
+description: Complete reference for the Weave command-line interface.
+---
+
+## `create`
+
+Create a new VM or restart a stopped VM:
+
+```sh
+weave create <name> [--cpus <count>] [--memory <GiB>] [--ttl <duration>] [--template <name-or-path>]
+```
+
+The default TTL is 10 minutes. A template can only be supplied when creating a new VM, not when restarting an existing one.
+
+## `ls`
+
+List VMs, their status, and remaining TTL:
+
+```sh
+weave ls
+```
+
+`weave list` is an alias.
+
+## `ssh`
+
+Open an interactive shell in a running VM:
+
+```sh
+weave ssh <name>
+```
+
+## `shell`
+
+Run a command in a running VM:
+
+```sh
+weave shell <name> "<command>"
+```
+
+## `stop`
+
+Stop a VM without deleting it:
+
+```sh
+weave stop <name>
+```
+
+## `kill`
+
+Permanently delete a VM and its virtual disk:
+
+```sh
+weave kill <name>
+```
+
+<Callout type="warn" title="Permanent deletion">
+  `weave kill` removes the VM and its guest data. Use `weave stop` when you want
+  to keep the virtual disk for later.
+</Callout>
+
+Run `weave <command> --help` for command-specific examples and options.

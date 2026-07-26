@@ -1,0 +1,51 @@
+---
+title: Development
+description: Work on the Weave monorepo and validate changes.
+---
+
+Weave is a Bun workspace managed with Turborepo. The CLI lives in `packages/cli` and is written in TypeScript with Effect.
+
+## Install dependencies
+
+```sh
+bun install
+```
+
+## Run the CLI
+
+```sh
+bun packages/cli/src/index.ts --help
+```
+
+## Run the docs
+
+Start the Fumadocs site locally:
+
+```sh
+bun run --cwd apps/docs dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+## Validate changes
+
+Run the repository's required checks:
+
+```sh
+bun run fix
+bun run lint
+bunx turbo check-types
+bunx turbo test
+```
+
+Build all packages and applications:
+
+```sh
+bunx turbo build
+```
+
+The regular CLI test suite uses Vitest and does not start real VMs. The opt-in TTL integration test requires a host with working virtualization:
+
+```sh
+bun run --cwd packages/cli test:integration
+```

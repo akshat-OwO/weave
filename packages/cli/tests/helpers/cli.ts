@@ -6,6 +6,7 @@ import { Command } from "effect/unstable/cli";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import type { ChildProcess } from "effect/unstable/process";
 
+import cliPackage from "../../package.json" with { type: "json" };
 import { weave } from "../../src/cmds";
 import { vmTtlMetadataPath } from "../../src/lib/vm-ttl";
 import { LimaRuntime } from "../../src/services/lima-runtime";
@@ -139,7 +140,9 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
         stderr.push(...errors.slice(initialErrorCount).map(String));
       });
 
-      return yield* Command.runWith(weave, { version: "0.0.0" })(args).pipe(
+      return yield* Command.runWith(weave, {
+        version: cliPackage.version,
+      })(args).pipe(
         Effect.provideService(LimaRuntime, lima),
         Effect.provideService(UserConfig, userConfig),
         Effect.provideService(FileSystem.FileSystem, fileSystem),

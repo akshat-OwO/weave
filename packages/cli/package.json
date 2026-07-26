@@ -1,5 +1,6 @@
 {
   "name": "@weave/cli",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "module": "index.ts",

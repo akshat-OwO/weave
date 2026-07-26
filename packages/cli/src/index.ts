@@ -2,6 +2,7 @@ import { BunRuntime, BunServices } from "@effect/platform-bun";
 import { Effect, Layer } from "effect";
 import { Command } from "effect/unstable/cli";
 
+import cliPackage from "../package.json" with { type: "json" };
 import { weave } from "./cmds";
 import { LimaRuntimeLive } from "./services/lima-runtime";
 import { UserConfig, UserConfigLive } from "./services/user-config";
@@ -15,7 +16,7 @@ const program = Effect.gen(function* programHandler() {
 
   yield* userConfig.init();
 
-  yield* Command.run(weave, { version: "0.0.0" });
+  yield* Command.run(weave, { version: cliPackage.version });
 });
 
 program.pipe(Effect.provide(AppLive), BunRuntime.runMain);

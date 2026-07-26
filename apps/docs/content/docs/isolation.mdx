@@ -1,0 +1,32 @@
+---
+title: Data and isolation
+description: Understand Weave's mount, storage, and lifecycle behavior.
+---
+
+## Host isolation
+
+Weave passes `--mount-none` whenever it creates or restarts a VM. Lima therefore does not mount host directories into the guest.
+
+This protects host files from commands that are intended to run only inside a disposable environment.
+
+## Guest persistence
+
+Stopping a VM does not remove its virtual disk. Its files remain available when the VM is restarted:
+
+```sh
+weave stop dev
+weave create dev
+```
+
+The restarted VM receives a new TTL. Use `weave kill dev` when you want to remove the disk and its data permanently.
+
+## Network access
+
+Guests retain network access even though host-directory mounts are disabled.
+
+## Weave data directory
+
+Weave keeps its bundled Lima runtime, templates, and VM state separate from any system Lima installation:
+
+- macOS and Linux: `~/weave`
+- Windows: `%APPDATA%\weave`

@@ -1,0 +1,12 @@
+{
+  "title": "Weave",
+  "pages": [
+    "index",
+    "installation",
+    "quick-start",
+    "commands",
+    "templates",
+    "isolation",
+    "development"
+  ]
+}

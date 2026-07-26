@@ -1,0 +1,35 @@
+---
+title: Templates
+description: Start environments with Node.js, Python, or custom Lima configuration.
+---
+
+## Node.js
+
+The `node` template installs the current Node.js LTS release through nvm:
+
+```sh
+weave create node-dev --template node
+```
+
+## Python
+
+The `python` template installs Python through uv:
+
+```sh
+weave create py-dev --template python
+```
+
+## Custom Lima YAML
+
+Pass a path to your own Lima YAML file:
+
+```sh
+weave create custom-dev --template ./templates/custom.yaml
+```
+
+Relative paths are resolved from the directory where you run Weave.
+
+<Callout title="New VMs only">
+  Choose a template when you first create a VM. Weave rejects template changes
+  when restarting an existing VM.
+</Callout>
