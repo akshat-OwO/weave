@@ -83,6 +83,43 @@ jobs:
           )
           sha256sum "${assets[@]}" > packages/cli/out/checksums.txt
 
+      - name: Prepare release notes
+        if: steps.release.outputs.release == 'true'
+        shell: bash
+        run: |
+          version="${{ steps.release.outputs.version }}"
+          changelog="packages/cli/CHANGELOG.md"
+          release_notes_body="packages/cli/out/release-notes-body.md"
+          release_notes="packages/cli/out/release-notes.md"
+
+          awk -v version="$version" '
+            $0 == "## " version {
+              found = 1
+              next
+            }
+            found && /^## / {
+              exit
+            }
+            found {
+              print
+            }
+            END {
+              if (!found) {
+                exit 1
+              }
+            }
+          ' "$changelog" > "$release_notes_body"
+
+          if ! rg --quiet '[^[:space:]]' "$release_notes_body"; then
+            echo "No changelog entry found for ${version}" >&2
+            exit 1
+          fi
+
+          {
+            printf "## What's Changed\n"
+            cat "$release_notes_body"
+          } > "$release_notes"
+
       - name: Create tag and GitHub release
         if: steps.release.outputs.release == 'true'
         shell: bash
@@ -99,7 +136,7 @@ jobs:
           gh release create \
             "${{ steps.release.outputs.tag }}" \
             "${assets[@]}" \
-            --generate-notes \
+            --notes-file packages/cli/out/release-notes.md \
             --target "$GITHUB_SHA" \
             --title "Weave ${{ steps.release.outputs.version }}"
         env:
