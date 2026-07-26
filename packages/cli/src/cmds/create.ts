@@ -13,6 +13,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { resolveVmTemplate } from "../lib/vm-template";
+import { writeVmTtl } from "../lib/vm-ttl";
 import { QemuNotFoundError } from "../schemas/errors/qemu-not-found.schema";
 import { TemplateOnExistingVmError } from "../schemas/errors/template-on-existing-vm.schema";
 import { VmAlreadyExistsError } from "../schemas/errors/vm-already-exists.schema";
@@ -221,8 +222,22 @@ export const create = Command.make(
         );
       }
 
-      const expireCommand = `nohup sh -c 'sleep ${vmTtl.seconds}; sudo poweroff' >/dev/null 2>&1 </dev/null &`;
-      yield* lima.run(["shell", vmName, "--", "sh", "-lc", expireCommand]);
+      const expiresAt = (yield* Clock.currentTimeMillis) + vmTtl.seconds * 1000;
+      yield* lima.run([
+        "shell",
+        vmName,
+        "--",
+        "sudo",
+        "systemd-run",
+        "--quiet",
+        "--unit=weave-ttl",
+        `--on-active=${vmTtl.seconds}s`,
+        "--timer-property=AccuracySec=1s",
+        "--collect",
+        "systemctl",
+        "poweroff",
+      ]);
+      yield* writeVmTtl(userConfig.lima.home, vmName, expiresAt);
 
       const action = exists ? "Started" : "Created";
       const finishedAt = yield* Clock.currentTimeMillis;

@@ -93,7 +93,7 @@ A template can only be supplied when creating a new VM, not when restarting an e
 | Command | Description |
 | --- | --- |
 | `weave create <name> [--cpus <count>] [--ttl <duration>] [--template <name-or-path>]` | Create a new VM or restart a stopped one |
-| `weave ls` | List running and stopped VMs (`list` is an alias) |
+| `weave ls` | List VMs, their status, and remaining TTL (`list` is an alias) |
 | `weave ssh <name>` | Open an interactive shell in a running VM |
 | `weave shell <name> "<command>"` | Run a command in a running VM |
 | `weave stop <name>` | Stop a VM without deleting it |
@@ -128,4 +128,10 @@ bunx turbo test
 bunx turbo build
 ```
 
-Tests use Vitest and do not require starting real VMs.
+The regular test suite uses Vitest and does not start real VMs. Run the opt-in TTL integration test on a host with working virtualization:
+
+```sh
+bun run --cwd packages/cli test:integration
+```
+
+The integration test creates a uniquely named VM, verifies that it remains running before its TTL, waits for it to stop after expiry, and deletes it during cleanup.

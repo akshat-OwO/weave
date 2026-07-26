@@ -7,7 +7,8 @@
     "start": "bun scripts/start.ts",
     "build": "bun scripts/build.ts",
     "check-types": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "bun test tests/integration/ttl.integration.test.ts"
   },
   "dependencies": {
     "@effect/platform-bun": "catalog:effect",

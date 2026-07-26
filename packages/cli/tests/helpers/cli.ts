@@ -7,6 +7,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import type { ChildProcess } from "effect/unstable/process";
 
 import { weave } from "../../src/cmds";
+import { vmTtlMetadataPath } from "../../src/lib/vm-ttl";
 import { LimaRuntime } from "../../src/services/lima-runtime";
 import { UserConfig } from "../../src/services/user-config";
 
@@ -22,6 +23,10 @@ export interface LimaCall {
 
 export interface CliHarness {
   readonly calls: LimaCall[];
+  readonly fileWrites: readonly {
+    readonly contents: string;
+    readonly path: string;
+  }[];
   readonly processCalls: ChildProcess.Command[];
   readonly stderr: string[];
   readonly stdout: string[];
@@ -37,6 +42,7 @@ interface CliHarnessOptions {
     readonly stdout: string;
   }[];
   readonly processOutputs?: readonly string[];
+  readonly ttlExpiresAtByVm?: Readonly<Record<string, number>>;
 }
 
 const configPath = "/test/weave";
@@ -44,6 +50,10 @@ const limaHome = `${configPath}/lima-home`;
 
 export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
   const calls: LimaCall[] = [];
+  const fileWrites: {
+    readonly contents: string;
+    readonly path: string;
+  }[] = [];
   const limaOutputs = [...(options.limaOutputs ?? [])];
   const processCalls: ChildProcess.Command[] = [];
   const processOutputs = [...(options.processOutputs ?? [])];
@@ -76,10 +86,33 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
     },
   });
   const fileSystem = FileSystem.makeNoop({
-    exists: (path) =>
-      Effect.succeed(options.existingVm === true && path === `${limaHome}/dev`),
+    exists: (path) => {
+      if (options.existingVm === true && path === `${limaHome}/dev`) {
+        return Effect.succeed(true);
+      }
+
+      return Effect.succeed(
+        Object.entries(options.ttlExpiresAtByVm ?? {}).some(
+          ([name]) => path === vmTtlMetadataPath(limaHome, name)
+        )
+      );
+    },
     makeDirectory: () => Effect.void,
-    writeFileString: () => Effect.void,
+    readFileString: (path) => {
+      const entry = Object.entries(options.ttlExpiresAtByVm ?? {}).find(
+        ([name]) => path === vmTtlMetadataPath(limaHome, name)
+      );
+
+      return Effect.succeed(
+        JSON.stringify({
+          expiresAt: entry?.[1],
+        })
+      );
+    },
+    writeFileString: (path, contents) =>
+      Effect.sync(() => {
+        fileWrites.push({ contents, path });
+      }),
   });
   const processSpawner = ChildProcessSpawner.ChildProcessSpawner.of({
     exitCode: () => Effect.die("Unexpected process exitCode call"),
@@ -122,5 +155,5 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
       );
     });
 
-  return { calls, processCalls, run, stderr, stdout };
+  return { calls, fileWrites, processCalls, run, stderr, stdout };
 };

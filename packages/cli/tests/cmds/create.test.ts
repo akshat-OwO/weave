@@ -38,12 +38,24 @@ describe("create", () => {
         "shell",
         "dev",
         "--",
-        "sh",
-        "-lc",
-        "nohup sh -c 'sleep 600; sudo poweroff' >/dev/null 2>&1 </dev/null &",
+        "sudo",
+        "systemd-run",
+        "--quiet",
+        "--unit=weave-ttl",
+        "--on-active=600s",
+        "--timer-property=AccuracySec=1s",
+        "--collect",
+        "systemctl",
+        "poweroff",
       ]);
       expect(harness.stdout).toEqual(["✔ Created dev in 0s (TTL: 10m)"]);
       expect(harness.stderr).toEqual([]);
+      expect(harness.fileWrites).toEqual([
+        {
+          contents: '{"expiresAt":600000}',
+          path: "/test/weave/lima-home/dev/.weave-ttl.json",
+        },
+      ]);
     })
   );
 
@@ -71,7 +83,7 @@ describe("create", () => {
           "/test/weave/templates/node.yaml",
         ])
       );
-      expect(harness.calls[1]?.args.at(-1)).toContain("sleep 7200");
+      expect(harness.calls[1]?.args).toContain("--on-active=7200s");
       expect(harness.stdout).toEqual(["✔ Created dev in 0s (TTL: 2h)"]);
       expect(harness.stderr).toEqual([]);
     })
@@ -106,15 +118,27 @@ describe("create", () => {
             "shell",
             "dev",
             "--",
-            "sh",
-            "-lc",
-            "nohup sh -c 'sleep 30; sudo poweroff' >/dev/null 2>&1 </dev/null &",
+            "sudo",
+            "systemd-run",
+            "--quiet",
+            "--unit=weave-ttl",
+            "--on-active=30s",
+            "--timer-property=AccuracySec=1s",
+            "--collect",
+            "systemctl",
+            "poweroff",
           ],
           progress: undefined,
         },
       ]);
       expect(harness.stdout).toEqual(["✔ Started dev in 0s (TTL: 30s)"]);
       expect(harness.stderr).toEqual([]);
+      expect(harness.fileWrites).toEqual([
+        {
+          contents: '{"expiresAt":30000}',
+          path: "/test/weave/lima-home/dev/.weave-ttl.json",
+        },
+      ]);
     })
   );
 
