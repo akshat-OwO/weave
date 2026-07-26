@@ -58,10 +58,10 @@ Create a VM with the default 10-minute TTL:
 weave create dev
 ```
 
-Customize its CPU count and TTL:
+Customize its CPU count, integer memory in GiB, and TTL:
 
 ```sh
-weave create dev --cpus 4 --ttl 1h
+weave create dev --cpus 4 --memory 8 --ttl 1h
 ```
 
 TTL values are a positive integer followed by `s`, `m`, `h`, or `d`. When the TTL expires, the guest shuts down but is not deleted. Running `weave create` again with the same name restarts a stopped VM and assigns it a new TTL.
@@ -92,7 +92,7 @@ A template can only be supplied when creating a new VM, not when restarting an e
 
 | Command | Description |
 | --- | --- |
-| `weave create <name> [--cpus <count>] [--ttl <duration>] [--template <name-or-path>]` | Create a new VM or restart a stopped one |
+| `weave create <name> [--cpus <count>] [--memory <GiB>] [--ttl <duration>] [--template <name-or-path>]` | Create a new VM or restart a stopped one |
 | `weave ls` | List VMs, their status, and remaining TTL (`list` is an alias) |
 | `weave ssh <name>` | Open an interactive shell in a running VM |
 | `weave shell <name> "<command>"` | Run a command in a running VM |

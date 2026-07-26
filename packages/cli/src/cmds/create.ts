@@ -32,6 +32,14 @@ const defaultCpuCount = Effect.sync(() =>
   Math.max(1, Math.round(navigator.hardwareConcurrency * 0.1))
 );
 
+const PositiveMemorySize = Schema.Int.check(
+  Schema.isGreaterThan(0, {
+    message: "Memory must be greater than zero",
+  })
+);
+
+const DEFAULT_MEMORY_SIZE_GIB = 2;
+
 const NestedVirtualizationAppleChip = Schema.String.check(
   Schema.isPattern(/^Apple M(?:[3-9]|\d{2,})(?:\s|$)/u)
 );
@@ -119,6 +127,13 @@ const cpus = Flag.integer("cpus").pipe(
   )
 );
 
+const memory = Flag.integer("memory").pipe(
+  Flag.withSchema(PositiveMemorySize),
+  Flag.optional,
+  Flag.withMetavar("GIB"),
+  Flag.withDescription("Memory in GiB; new VMs default to 2 GiB")
+);
+
 const template = Flag.string("template").pipe(
   Flag.optional,
   Flag.withMetavar("NAME_OR_PATH"),
@@ -134,8 +149,14 @@ const name = Argument.string("name").pipe(
 
 export const create = Command.make(
   "create",
-  { cpus, name, template, ttl },
-  ({ cpus: cpuCount, name: vmName, template: vmTemplate, ttl: vmTtl }) =>
+  { cpus, memory, name, template, ttl },
+  ({
+    cpus: cpuCount,
+    memory: memorySize,
+    name: vmName,
+    template: vmTemplate,
+    ttl: vmTtl,
+  }) =>
     Effect.gen(function* createHandler() {
       const startedAt = yield* Clock.currentTimeMillis;
       const fs = yield* FileSystem.FileSystem;
@@ -179,12 +200,16 @@ export const create = Command.make(
         const cpuArguments = Option.isSome(cpuCount)
           ? [`--cpus=${cpuCount.value}`]
           : [];
+        const memoryArguments = Option.isSome(memorySize)
+          ? [`--memory=${memorySize.value}`]
+          : [];
         yield* ensureWindowsQemuAvailable;
         yield* lima.run([
           "edit",
           "--tty=false",
           "--mount-none",
           ...cpuArguments,
+          ...memoryArguments,
           vmName,
         ]);
         yield* lima.run(["start", "--tty=false", vmName], {
@@ -197,6 +222,9 @@ export const create = Command.make(
         const newVmCpuCount = Option.isSome(cpuCount)
           ? cpuCount.value
           : yield* defaultCpuCount;
+        const newVmMemorySize = Option.isSome(memorySize)
+          ? memorySize.value
+          : DEFAULT_MEMORY_SIZE_GIB;
         const nestedArguments = yield* nestedVirtualizationArguments;
         const templateArguments = Option.isSome(vmTemplate)
           ? [yield* resolveVmTemplate(vmTemplate.value, userConfig.configPath)]
@@ -208,6 +236,7 @@ export const create = Command.make(
             "--tty=false",
             `--name=${vmName}`,
             `--cpus=${newVmCpuCount}`,
+            `--memory=${newVmMemorySize}`,
             "--mount-none",
             ...platformCreateArguments,
             ...nestedArguments,
@@ -256,11 +285,12 @@ export const create = Command.make(
   Command.withExamples([
     {
       command: "weave create dev",
-      description: "Create a named VM with smart CPU defaults and a 10m TTL",
+      description:
+        "Create a VM with 10% of host CPUs, 2 GiB RAM, and a 10m TTL",
     },
     {
-      command: "weave create dev --cpus 4 --ttl 1h",
-      description: "Create a named VM with custom CPUs and TTL",
+      command: "weave create dev --cpus 4 --memory 8 --ttl 1h",
+      description: "Create a VM with custom CPUs, memory, and TTL",
     },
     {
       command: "weave create dev --template node",

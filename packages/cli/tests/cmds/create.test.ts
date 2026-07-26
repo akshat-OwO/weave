@@ -10,7 +10,7 @@ const supportedNestedVirtualizationOutputs =
     : [];
 
 describe("create", () => {
-  it.effect("creates a VM with default CPU and TTL settings", () =>
+  it.effect("creates a VM with default CPU, memory, and TTL settings", () =>
     Effect.gen(function* createDefaultTest() {
       const harness = makeCliHarness({
         processOutputs: supportedNestedVirtualizationOutputs,
@@ -24,6 +24,7 @@ describe("create", () => {
           "start",
           "--tty=false",
           "--name=dev",
+          "--memory=2",
           "--mount-none",
         ])
       );
@@ -70,6 +71,8 @@ describe("create", () => {
         "dev",
         "--cpus",
         "4",
+        "--memory",
+        "6",
         "--ttl",
         "2h",
         "--template",
@@ -79,6 +82,7 @@ describe("create", () => {
       expect(harness.calls[0]?.args).toEqual(
         expect.arrayContaining([
           "--cpus=4",
+          "--memory=6",
           "--name=dev",
           "/test/weave/templates/node.yaml",
         ])
@@ -89,19 +93,32 @@ describe("create", () => {
     })
   );
 
-  it.effect("restarts a stopped VM and updates its CPU count", () =>
+  it.effect("restarts a stopped VM and updates its CPU and memory", () =>
     Effect.gen(function* restartTest() {
       const harness = makeCliHarness({
         existingVm: true,
         processOutputs: ["Stopped"],
       });
 
-      yield* harness.run(["create", "dev", "--cpus=6", "--ttl=30s"]);
+      yield* harness.run([
+        "create",
+        "dev",
+        "--cpus=6",
+        "--memory=3",
+        "--ttl=30s",
+      ]);
 
       expect(harness.calls).toEqual([
         {
           acceptableExitCodes: undefined,
-          args: ["edit", "--tty=false", "--mount-none", "--cpus=6", "dev"],
+          args: [
+            "edit",
+            "--tty=false",
+            "--mount-none",
+            "--cpus=6",
+            "--memory=3",
+            "dev",
+          ],
           progress: undefined,
         },
         {
@@ -177,13 +194,18 @@ describe("create", () => {
     })
   );
 
-  it.effect("rejects invalid CPU, TTL, and VM name values", () =>
+  it.effect("rejects invalid CPU, memory, TTL, and VM name values", () =>
     Effect.gen(function* invalidCreateValuesTest() {
       for (const [args, validationMessage] of [
         [
           ["create", "dev", "--cpus", "0"],
           "CPU count must be greater than zero",
         ],
+        [
+          ["create", "dev", "--memory", "0"],
+          "Memory must be greater than zero",
+        ],
+        [["create", "dev", "--memory", "1.5"], "Expected an integer"],
         [["create", "dev", "--ttl", "0m"], "TTL must be a positive duration"],
         [["create", "../dev"], "VM name must start with a letter or number"],
       ] as const) {
