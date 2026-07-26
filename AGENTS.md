@@ -7,6 +7,7 @@ Weave allows users to create sandboxed environments.
 - Prefer performance, reliability, and scalability over workarounds.
 - Use Effect everywhere.
 - Use Bun APIs.
+- Use Bun as runtime, nub as package manager.
 - Never rely on memory when checking Effect behavior or APIs. Always inspect the installed Effect source in `node_modules`.
 
 ## Required validation

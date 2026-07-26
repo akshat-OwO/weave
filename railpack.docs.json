@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "node",
+  "packages": {
+    "bun": "1.3.14",
+    "node": "24",
+    "nub": "0.4.8"
+  },
+  "caches": {
+    "nub-install": {
+      "directory": "/root/.cache/nub",
+      "type": "shared"
+    }
+  },
+  "steps": {
+    "install": {
+      "commands": ["nub install --frozen-lockfile"],
+      "caches": ["nub-install"]
+    },
+    "build": {
+      "inputs": [{ "step": "install" }],
+      "commands": ["bunx turbo build --filter=@weave/docs"]
+    }
+  },
+  "deploy": {
+    "startCommand": "bun run --cwd apps/docs start",
+    "variables": {
+      "HOSTNAME": "0.0.0.0",
+      "NEXT_TELEMETRY_DISABLED": "1",
+      "NODE_ENV": "production",
+      "PORT": "3000"
+    }
+  }
+}
