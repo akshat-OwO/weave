@@ -2,7 +2,7 @@ import { Clock, Console, Effect } from "effect";
 import { Argument, Command } from "effect/unstable/cli";
 
 import { VmName } from "../schemas/vm-name.schema";
-import { LimaRuntime } from "../services/lima-runtime";
+import { VmManager } from "../services/vm-manager";
 
 export const kill = Command.make(
   "kill",
@@ -15,13 +15,8 @@ export const kill = Command.make(
   ({ name }) =>
     Effect.gen(function* killHandler() {
       const startedAt = yield* Clock.currentTimeMillis;
-      const lima = yield* LimaRuntime;
-      yield* lima.run(["delete", "--force", "--tty=false", name], {
-        progress: {
-          failureMessage: `Failed to delete ${name}`,
-          initialMessage: `Deleting ${name}…`,
-        },
-      });
+      const manager = yield* VmManager;
+      yield* manager.kill(name);
       const finishedAt = yield* Clock.currentTimeMillis;
       const elapsedSeconds = Math.max(
         0,
@@ -30,10 +25,6 @@ export const kill = Command.make(
       yield* Console.log(`✔ Deleted ${name} in ${elapsedSeconds}s`);
     })
 ).pipe(
-  Command.withDescription("Permanently delete a Lima VM"),
-  Command.withExamples([
-    {
-      command: "weave kill dev",
-    },
-  ])
+  Command.withDescription("Permanently delete a Firecracker VM"),
+  Command.withExamples([{ command: "weave kill dev" }])
 );

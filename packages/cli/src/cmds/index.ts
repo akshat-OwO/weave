@@ -8,6 +8,6 @@ import { ssh } from "./ssh";
 import { stop } from "./stop";
 
 export const weave = Command.make("weave").pipe(
-  Command.withDescription("Create and manage sandboxed Lima VMs"),
+  Command.withDescription("Create and manage sandboxed Firecracker VMs"),
   Command.withSubcommands([create, list, stop, kill, shell, ssh])
 );

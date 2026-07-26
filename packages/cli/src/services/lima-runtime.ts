@@ -9,7 +9,6 @@ import {
   Layer,
   Option,
   Ref,
-  Schedule,
   Stream,
   Terminal,
 } from "effect";
@@ -20,10 +19,11 @@ import {
   formatLimaLog,
   limaProgressLine,
 } from "../lib/lima-progress";
-import { UnsafeVmBackendError } from "../schemas/errors/unsafe-vm-backend.schema";
-import { UserConfig, UserConfigLive } from "./user-config";
+import { withProgress } from "../lib/progress";
+import { CommandExecutionError } from "../schemas/errors/command-execution.schema";
+import { UserConfig } from "./user-config";
 
-interface RunOptions {
+export interface LimaRunOptions {
   readonly acceptableExitCodes?: readonly number[];
   readonly progress?: {
     readonly failureMessage: string;
@@ -31,44 +31,39 @@ interface RunOptions {
   };
 }
 
-interface CapturedOutput {
+export interface LimaCapturedOutput {
   readonly stderr: string;
   readonly stdout: string;
 }
 
-const spinnerFrames = [
-  "⠋",
-  "⠙",
-  "⠹",
-  "⠸",
-  "⠼",
-  "⠴",
-  "⠦",
-  "⠧",
-  "⠇",
-  "⠏",
-] as const;
-const clearLine = "\r\u001B[2K";
-const hideCursor = "\u001B[?25l";
-const showCursor = "\u001B[?25h";
 const maximumDiagnosticLines = 20;
+const formatCommand = (args: readonly string[]): string =>
+  args.map((argument) => JSON.stringify(argument)).join(" ");
 
-export const LimaRuntime = Context.Service<{
-  assertIsolated: (
-    instance: string
-  ) => Effect.Effect<
-    void,
-    PlatformError.PlatformError | UnsafeVmBackendError,
-    never
-  >;
+export interface LimaRuntimeService {
   capture: (
     args: readonly string[]
-  ) => Effect.Effect<CapturedOutput, PlatformError.PlatformError, never>;
+  ) => Effect.Effect<
+    LimaCapturedOutput,
+    CommandExecutionError | PlatformError.PlatformError,
+    never
+  >;
   run: (
     args: readonly string[],
-    options?: RunOptions
-  ) => Effect.Effect<void, PlatformError.PlatformError, never>;
-}>("weave/services/limaRuntime");
+    options?: LimaRunOptions
+  ) => Effect.Effect<
+    void,
+    CommandExecutionError | PlatformError.PlatformError,
+    never
+  >;
+  status: (
+    args: readonly string[]
+  ) => Effect.Effect<number, PlatformError.PlatformError, never>;
+}
+
+export const LimaRuntime = Context.Service<LimaRuntimeService>(
+  "weave/services/limaRuntime"
+);
 
 export const LimaRuntimeLive = Layer.effect(
   LimaRuntime,
@@ -88,27 +83,6 @@ export const LimaRuntimeLive = Layer.effect(
     };
 
     return LimaRuntime.of({
-      assertIsolated: (instance) =>
-        Effect.gen(function* assertIsolatedHandler() {
-          if (process.platform === "win32") {
-            const command = ChildProcess.make(
-              userConfig.lima.executable,
-              ["list", instance, "--format={{.VMType}}"],
-              {
-                env: environment,
-                extendEnv: true,
-              }
-            );
-            const backend = (yield* processSpawner.string(command)).trim();
-
-            if (backend !== "qemu") {
-              return yield* new UnsafeVmBackendError({
-                backend,
-                name: instance,
-              });
-            }
-          }
-        }),
       capture: (args) =>
         Effect.scoped(
           Effect.gen(function* captureHandler() {
@@ -144,7 +118,11 @@ export const LimaRuntimeLive = Layer.effect(
               if (stderr.length > 0) {
                 yield* Console.error(stderr.trimEnd());
               }
-              return yield* Effect.die(`Command exited with code ${exitCode}`);
+              return yield* new CommandExecutionError({
+                backend: "Lima",
+                command: formatCommand(args),
+                exitCode,
+              });
             }
 
             return { stderr, stdout };
@@ -169,7 +147,11 @@ export const LimaRuntimeLive = Layer.effect(
             const exitCode = yield* processSpawner.exitCode(command);
 
             if (!acceptableExitCodes.includes(exitCode)) {
-              return yield* Effect.die(`Command exited with code ${exitCode}`);
+              return yield* new CommandExecutionError({
+                backend: "Lima",
+                command: formatCommand(args),
+                exitCode,
+              });
             }
             return;
           }
@@ -185,7 +167,6 @@ export const LimaRuntimeLive = Layer.effect(
               stdout: "pipe",
             }
           );
-          const message = yield* Ref.make(options.progress.initialMessage);
           const diagnostics = yield* Ref.make<readonly string[]>([]);
           const appendDiagnostic = (line: string) =>
             Ref.update(diagnostics, (lines) => {
@@ -193,82 +174,43 @@ export const LimaRuntimeLive = Layer.effect(
               next.push(line);
               return next;
             });
-          const consumeLine = (line: string) => {
-            const decoded = decodeLimaLogLine(line);
-            const progressMessage = limaProgressLine(line);
-
-            if (Option.isNone(decoded)) {
-              return Effect.all(
-                [
-                  appendDiagnostic(line),
-                  Option.isSome(progressMessage)
-                    ? Ref.set(message, progressMessage.value)
-                    : Effect.void,
-                ],
-                { discard: true }
+          const exitCode = yield* withProgress(
+            terminal,
+            options.progress.initialMessage,
+            ({ setMessage }) => {
+              const consumeLine = (line: string) => {
+                const decoded = decodeLimaLogLine(line);
+                const progressMessage = limaProgressLine(line);
+                return Effect.all(
+                  [
+                    appendDiagnostic(
+                      Option.isSome(decoded)
+                        ? formatLimaLog(decoded.value)
+                        : line
+                    ),
+                    Option.isSome(progressMessage)
+                      ? setMessage(progressMessage.value)
+                      : Effect.void,
+                  ],
+                  { discard: true }
+                );
+              };
+              return Effect.scoped(
+                Effect.gen(function* executeHandler() {
+                  const handle = yield* processSpawner.spawn(command);
+                  const outputFiber = yield* handle.all.pipe(
+                    Stream.decodeText,
+                    Stream.splitLines,
+                    Stream.runForEach(consumeLine),
+                    Effect.forkScoped
+                  );
+                  const commandExitCode = yield* handle.exitCode;
+                  yield* Fiber.join(outputFiber);
+                  return commandExitCode;
+                })
               );
             }
-
-            return Effect.all(
-              [
-                appendDiagnostic(formatLimaLog(decoded.value)),
-                Option.isSome(progressMessage)
-                  ? Ref.set(message, progressMessage.value)
-                  : Effect.void,
-              ],
-              { discard: true }
-            );
-          };
-          const execute = Effect.gen(function* executeHandler() {
-            const handle = yield* processSpawner.spawn(command);
-            const outputFiber = yield* handle.all.pipe(
-              Stream.decodeText,
-              Stream.splitLines,
-              Stream.runForEach(consumeLine),
-              Effect.forkScoped
-            );
-            const exitCode = yield* handle.exitCode;
-            yield* Fiber.join(outputFiber);
-            return exitCode;
-          });
-          const isInteractive =
-            process.stdout.isTTY === true &&
-            Bun.env.CI !== "true" &&
-            Bun.env.TERM !== "dumb";
-          let exitCode: number;
-
-          if (isInteractive) {
-            exitCode = yield* Effect.scoped(
-              Effect.gen(function* interactiveProgressHandler() {
-                const frame = yield* Ref.make(0);
-                const display = (text: string) =>
-                  terminal.display(text).pipe(Effect.ignore);
-                const render = Effect.gen(function* renderHandler() {
-                  const frameIndex = yield* Ref.getAndUpdate(
-                    frame,
-                    (index) => (index + 1) % spinnerFrames.length
-                  );
-                  const currentMessage = yield* Ref.get(message);
-                  yield* display(
-                    `${clearLine}${spinnerFrames[frameIndex]} ${currentMessage}`
-                  );
-                });
-
-                yield* display(hideCursor);
-                yield* Effect.addFinalizer(() =>
-                  display(`${clearLine}${showCursor}`)
-                );
-                yield* render.pipe(
-                  Effect.repeat(Schedule.spaced("80 millis")),
-                  Effect.forkScoped
-                );
-                return yield* execute;
-              })
-            );
-          } else {
-            yield* Console.log(options.progress.initialMessage);
-            exitCode = yield* Effect.scoped(execute);
-          }
+          );
 
           if (!acceptableExitCodes.includes(exitCode)) {
             const output = yield* Ref.get(diagnostics);
@@ -277,9 +219,23 @@ export const LimaRuntimeLive = Layer.effect(
             if (output.length > 0) {
               yield* Console.error(output.join("\n"));
             }
-            return yield* Effect.die(`Command exited with code ${exitCode}`);
+            return yield* new CommandExecutionError({
+              backend: "Lima",
+              command: formatCommand(args),
+              exitCode,
+            });
           }
         }),
+      status: (args) =>
+        processSpawner.exitCode(
+          ChildProcess.make(userConfig.lima.executable, args, {
+            env: environment,
+            extendEnv: true,
+            stderr: "ignore",
+            stdin: "ignore",
+            stdout: "ignore",
+          })
+        ),
     });
-  }).pipe(Effect.provide(UserConfigLive))
+  })
 );

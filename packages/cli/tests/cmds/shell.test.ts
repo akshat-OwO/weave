@@ -13,17 +13,9 @@ it.effect(
 
       expect(harness.calls).toEqual([
         {
-          acceptableExitCodes: undefined,
-          args: [
-            "shell",
-            "dev",
-            "--",
-            "sh",
-            "-lc",
-            'shell="$SHELL"; test -n "$shell" || shell=/bin/sh; exec "$shell" -lic "$1"',
-            "weave-shell",
-            "printf 'hello world'",
-          ],
+          command: "printf 'hello world'",
+          method: "shell",
+          name: "dev",
         },
       ]);
       expect(harness.stdout).toEqual([]);

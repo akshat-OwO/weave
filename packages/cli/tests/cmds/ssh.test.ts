@@ -13,8 +13,8 @@ it.effect(
 
       expect(harness.calls).toEqual([
         {
-          acceptableExitCodes: [0, 100, 130],
-          args: ["shell", "dev"],
+          method: "ssh",
+          name: "dev",
         },
       ]);
       expect(harness.stdout).toEqual([]);

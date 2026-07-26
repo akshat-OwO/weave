@@ -112,7 +112,7 @@ const waitForStopped = Effect.fn("weave/tests/integration/waitForStopped")(
 );
 
 test(
-  "stops a real Lima VM when its TTL expires",
+  "stops a real Firecracker VM when its TTL expires",
   async () => {
     const vmName = `weave-ttl-${process.pid}-${Date.now().toString(36)}`;
     const program = Effect.acquireUseRelease(
@@ -122,7 +122,7 @@ test(
           yield* runWeave(["create", name, "--cpus=1", `--ttl=${ttlSeconds}s`]);
           yield* Effect.sleep(runningCheckDelay);
           expect(yield* getVmStatus(name)).toBe("Running");
-          expect(yield* getVmRow(name)).toMatch(/\s\d+s\s+\S+$/u);
+          expect(yield* getVmRow(name)).toMatch(/\s\d+s$/u);
           yield* waitForStopped(name);
           expect(yield* getVmStatus(name)).toBe("Stopped");
         }),

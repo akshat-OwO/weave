@@ -11,12 +11,8 @@ it.effect("stop stops the named VM without deleting it", () =>
 
     expect(harness.calls).toEqual([
       {
-        acceptableExitCodes: undefined,
-        args: ["stop", "--tty=false", "dev"],
-        progress: {
-          failureMessage: "Failed to stop dev",
-          initialMessage: "Stopping dev…",
-        },
+        method: "stop",
+        name: "dev",
       },
     ]);
     expect(harness.stdout).toEqual(["✔ Stopped dev in 0s"]);

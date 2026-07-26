@@ -8,15 +8,19 @@ import runtimeAssetPath from "../runtime";
 import { ArchiveBytesError } from "../schemas/errors/install-runtime/archive-bytes.schema";
 import { ArchiveExtractError } from "../schemas/errors/install-runtime/archive-extract.schema";
 
-export const UserConfig = Context.Service<{
+export interface UserConfigService {
   configPath: string;
   lima: {
     runtime: string;
     executable: string;
     home: string;
   };
-  init: () => Effect.Effect<void>;
-}>("weave/services/userConfig");
+  initLima: () => Effect.Effect<void>;
+}
+
+export const UserConfig = Context.Service<UserConfigService>(
+  "weave/services/userConfig"
+);
 
 const createConfigIfNotExists = Effect.fn(
   "weave/services/userConfig/helper/createConfigIfNotExists"
@@ -94,7 +98,7 @@ export const UserConfigLive = Layer.effect(
 
     return UserConfig.of({
       configPath,
-      init: () =>
+      initLima: () =>
         Effect.gen(function* initHandler() {
           yield* installRuntime(fs, {
             executable: executablePath,

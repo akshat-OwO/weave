@@ -11,12 +11,8 @@ it.effect("kill permanently deletes the named VM", () =>
 
     expect(harness.calls).toEqual([
       {
-        acceptableExitCodes: undefined,
-        args: ["delete", "--force", "--tty=false", "dev"],
-        progress: {
-          failureMessage: "Failed to delete dev",
-          initialMessage: "Deleting dev…",
-        },
+        method: "kill",
+        name: "dev",
       },
     ]);
     expect(harness.stdout).toEqual(["✔ Deleted dev in 0s"]);

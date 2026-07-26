@@ -2,9 +2,7 @@ import { Effect } from "effect";
 import { Argument, Command } from "effect/unstable/cli";
 
 import { VmName } from "../schemas/vm-name.schema";
-import { LimaRuntime } from "../services/lima-runtime";
-
-const ACCEPTABLE_EXIT_CODES = [0, 100, 130] as const;
+import { VmManager } from "../services/vm-manager";
 
 export const ssh = Command.make(
   "ssh",
@@ -16,17 +14,10 @@ export const ssh = Command.make(
   },
   ({ name }) =>
     Effect.gen(function* sshHandler() {
-      const lima = yield* LimaRuntime;
-      yield* lima.assertIsolated(name);
-      yield* lima.run(["shell", name], {
-        acceptableExitCodes: ACCEPTABLE_EXIT_CODES,
-      });
+      const manager = yield* VmManager;
+      yield* manager.ssh(name);
     })
 ).pipe(
-  Command.withDescription("Open an interactive shell in a Lima VM"),
-  Command.withExamples([
-    {
-      command: "weave ssh dev",
-    },
-  ])
+  Command.withDescription("Open an interactive shell in a Firecracker VM"),
+  Command.withExamples([{ command: "weave ssh dev" }])
 );
