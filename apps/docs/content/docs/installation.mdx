@@ -13,6 +13,8 @@ The script detects your operating system and CPU architecture, then installs the
 
 Rerun the same command to upgrade. The installer checks the existing binary at the target path (or on `PATH` when using the default location), compares its version with the latest release, and only downloads a binary when an upgrade is available. Current and newer versions are left unchanged. Development or malformed versions must be replaced manually so the installer cannot accidentally downgrade them.
 
+Interactive terminals show an in-place progress loader while release metadata, binaries, and installation stages are processed. Piped, redirected, or CI output uses stable line-by-line messages without terminal control characters.
+
 Verify the installation:
 
 ```sh

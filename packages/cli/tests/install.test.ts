@@ -54,6 +54,21 @@ const runProcess = async (
   };
 };
 
+const runInstaller = (
+  environment: NodeJS.ProcessEnv,
+  interactive: boolean
+): Promise<{ exitCode: number; stderr: string; stdout: string }> => {
+  if (interactive) {
+    return runProcess(
+      "script",
+      ["-qefc", `/bin/sh '${installScript}'`, "/dev/null"],
+      environment
+    );
+  }
+
+  return runProcess("sh", [installScript], environment);
+};
+
 const makeVersionBinary = async (filePath: string, versionOutput: string) => {
   await makeExecutable(
     filePath,
@@ -98,6 +113,10 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
+if [ -n "\${WEAVE_TEST_DOWNLOAD_DELAY:-}" ]; then
+  sleep "$WEAVE_TEST_DOWNLOAD_DELAY"
+fi
+
 case "$download_url" in
   https://api.github.com/*)
     printf '{"tag_name":"%s"}\\n' "$WEAVE_TEST_LATEST_TAG" > "$output_path"
@@ -114,19 +133,25 @@ esac
   );
 
   const run = (
-    environment: Record<string, string> = {}
+    environment: Record<string, string> = {},
+    interactive = false
   ): Promise<{ exitCode: number; stderr: string; stdout: string }> =>
-    runProcess("sh", [installScript], {
-      ...process.env,
-      PATH: `${toolsDirectory}:${process.env.PATH ?? ""}`,
-      WEAVE_INSTALL_DIR: installDirectory,
-      WEAVE_TEST_ASSET: assetPath,
-      WEAVE_TEST_DOWNLOAD_LOG: downloadLogPath,
-      WEAVE_TEST_LATEST_TAG: "v1.2.3",
-      WEAVE_UNAME_M: "x86_64",
-      WEAVE_UNAME_S: "Linux",
-      ...environment,
-    });
+    runInstaller(
+      {
+        ...process.env,
+        CI: "",
+        PATH: `${toolsDirectory}:${process.env.PATH ?? ""}`,
+        TERM: "xterm-256color",
+        WEAVE_INSTALL_DIR: installDirectory,
+        WEAVE_TEST_ASSET: assetPath,
+        WEAVE_TEST_DOWNLOAD_LOG: downloadLogPath,
+        WEAVE_TEST_LATEST_TAG: "v1.2.3",
+        WEAVE_UNAME_M: "x86_64",
+        WEAVE_UNAME_S: "Linux",
+        ...environment,
+      },
+      interactive
+    );
 
   return {
     assetPath,
@@ -163,6 +188,55 @@ describe("install script", () => {
     ).toMatchObject({ exitCode: 0, stdout: "weave v1.2.3\n" });
   });
 
+  it("uses stable line-oriented progress when output is redirected", async () => {
+    const harness = await makeHarness();
+    await makeVersionBinary(harness.assetPath, "weave v1.2.3");
+
+    const result = await harness.run();
+    const output = result.stdout + result.stderr;
+
+    expect(result.exitCode).toBe(0);
+    expect(output).toContain("Checking the latest Weave release...\n");
+    expect(output).toContain("Checked the latest Weave release.\n");
+    expect(output).toContain("Downloading Weave 1.2.3 for linux/x64...\n");
+    expect(output).toContain("Validating the downloaded Weave binary...\n");
+    expect(output).toContain(
+      `Staging Weave in ${harness.installDirectory}...\n`
+    );
+    expect(output).toContain(
+      `Atomically installing Weave to ${harness.installedBinary}...\n`
+    );
+    expect(output).not.toContain("\u001B[2K");
+  });
+
+  it.runIf(process.platform === "linux")(
+    "animates and replaces progress lines in an interactive terminal",
+    async () => {
+      const harness = await makeHarness();
+      await makeVersionBinary(harness.assetPath, "weave v1.2.3");
+
+      const result = await harness.run(
+        { WEAVE_TEST_DOWNLOAD_DELAY: "0.3" },
+        true
+      );
+
+      expect(result.exitCode, result.stdout + result.stderr).toBe(0);
+      expect(
+        ["-", "\\", "|", "/"].some((frame) =>
+          result.stdout.includes(
+            `\r\u001B[2K${frame} Checking the latest Weave release`
+          )
+        )
+      ).toBe(true);
+      expect(result.stdout).toContain(
+        "\r\u001B[2KChecked the latest Weave release."
+      );
+      expect(result.stdout).not.toContain(
+        "Checking the latest Weave release...\r\n"
+      );
+    }
+  );
+
   it("does not download an asset when the installed release is current", async () => {
     const harness = await makeHarness();
     await makeVersionBinary(harness.installedBinary, "weave v1.2.3");
@@ -171,6 +245,7 @@ describe("install script", () => {
 
     expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(result.stdout).toContain("already up to date");
+    expect(result.stdout).not.toContain("Downloading Weave");
     expect(await pathExists(harness.downloadLogPath)).toBe(false);
   });
 
@@ -268,7 +343,11 @@ describe("install script", () => {
     const result = await harness.run({ WEAVE_TEST_DOWNLOAD_FAIL: "1" });
 
     expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      "failed to download Weave 1.2.3; the existing installation was not changed"
+    );
     expect(result.stderr).toContain("existing installation was not changed");
+    expect(result.stderr).not.toContain("\u001B[2K");
     expect(await readFile(harness.installedBinary, "utf-8")).toBe(
       originalBinary
     );
