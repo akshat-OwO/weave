@@ -21,7 +21,9 @@ Start an existing stopped VM without changing its configuration or virtual disk:
 weave start <name> [--ttl <duration>]
 ```
 
-Starting assigns a new 10-minute TTL by default. Set `--ttl` to choose another duration. The command reports an error when the VM does not exist or is already running.
+Starting assigns a new 10-minute TTL by default. Set `--ttl` to choose another duration. The command reports an error when the VM does not exist, is already running, or is in another non-stopped lifecycle state.
+
+Before starting, Weave verifies that the persisted Lima configuration has no host-directory mounts and reasserts `--mount-none`. If the configuration was edited externally to add a mount, `start` refuses to boot it and directs you to `weave create <name>`, which safely removes mounts while preserving its CPU, memory, and disk.
 
 ## `ls`
 

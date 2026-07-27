@@ -112,7 +112,7 @@ Run `weave <command> --help` for command-specific examples and options.
 
 On macOS and Linux, Weave stores its bundled runtime, templates, and VM state under `~/weave`. On Windows, it uses `%APPDATA%\weave`.
 
-Weave passes `--mount-none` when it creates a VM and when `weave create` reconfigures an existing stopped VM. This prevents Lima from mounting host directories into the guest. `weave start` leaves that configuration unchanged. VMs retain their own virtual disk when stopped and continue to have network access. Use `weave kill <name>` when the disk and its data are no longer needed.
+Weave passes `--mount-none` when it creates or starts a VM. `weave start` first verifies that the persisted Lima configuration has no host-directory mounts and refuses to start an externally modified VM until `weave create <name>` safely removes them. CPU, memory, and disk configuration remain unchanged. VMs retain their own virtual disk when stopped and continue to have network access. Use `weave kill <name>` when the disk and its data are no longer needed.
 
 ## Development
 

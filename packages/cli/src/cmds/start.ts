@@ -5,7 +5,9 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { scheduleVmTtl } from "../lib/vm-ttl";
+import { UnsafeVmMountsError } from "../schemas/errors/unsafe-vm-mounts.schema";
 import { VmAlreadyRunningError } from "../schemas/errors/vm-already-running.schema";
+import { VmLifecycleStateError } from "../schemas/errors/vm-lifecycle-state.schema";
 import { VmNotFoundError } from "../schemas/errors/vm-not-found.schema";
 import { Ttl } from "../schemas/ttl.schema";
 import { VmName } from "../schemas/vm-name.schema";
@@ -19,6 +21,10 @@ const ttl = Flag.string("ttl").pipe(
   Flag.withDescription(
     "Time to live: <number>s, <number>m, <number>h, or <number>d"
   )
+);
+
+const LimaMountsJson = Schema.fromJsonString(
+  Schema.NullOr(Schema.Array(Schema.Unknown))
 );
 
 export const start = Command.make(
@@ -63,14 +69,31 @@ export const start = Command.make(
       );
       const status = yield* processSpawner.string(statusCommand).pipe(
         Effect.map((output) => output.trim()),
-        Effect.flatMap(Schema.decodeUnknownEffect(Schema.NonEmptyString))
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.String))
       );
 
-      if (status !== "Stopped") {
+      if (status === "Running") {
         return yield* new VmAlreadyRunningError({ name });
       }
 
-      yield* lima.run(["start", "--tty=false", name], {
+      if (status !== "Stopped") {
+        return yield* new VmLifecycleStateError({ name, status });
+      }
+
+      const mountsOutput = yield* lima.capture([
+        "list",
+        name,
+        "--format={{json .Config.Mounts}}",
+      ]);
+      const mounts = yield* Schema.decodeUnknownEffect(LimaMountsJson)(
+        mountsOutput.stdout.trim()
+      );
+
+      if (mounts !== null && mounts.length > 0) {
+        return yield* new UnsafeVmMountsError({ name });
+      }
+
+      yield* lima.run(["start", "--tty=false", "--mount-none", name], {
         progress: {
           failureMessage: `Failed to start ${name}`,
           initialMessage: `Starting ${name}…`,
