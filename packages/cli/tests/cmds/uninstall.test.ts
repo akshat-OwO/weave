@@ -13,8 +13,14 @@ const runningVmList = {
 it.effect("stops every running managed VM before removing only the CLI", () =>
   Effect.gen(function* uninstallTest() {
     const harness = makeCliHarness({
-      lifecycle: { uninstallPath: "/usr/local/bin/weave" },
+      lifecycle: {
+        uninstallResult: {
+          deferred: false,
+          path: "/usr/local/bin/weave",
+        },
+      },
       limaOutputs: [runningVmList],
+      managedState: true,
     });
 
     yield* harness.run(["uninstall"]);
@@ -53,6 +59,7 @@ it.effect("keeps the CLI installed when any running VM fails to stop", () =>
     const harness = makeCliHarness({
       limaOutputs: [runningVmList],
       limaRunFailures: ["bravo"],
+      managedState: true,
     });
 
     const exit = yield* Effect.exit(harness.run(["uninstall"]));
@@ -62,6 +69,46 @@ it.effect("keeps the CLI installed when any running VM fails to stop", () =>
     expect(harness.stdout).toContain("✔ Stopped alpha");
     expect(harness.stderr.join("\n")).toContain("Failed to stop bravo");
     expect(harness.stderr.join("\n")).toContain("The CLI was not removed");
+  })
+);
+
+it.effect(
+  "does not initialize Lima when no managed state directory exists",
+  () =>
+    Effect.gen(function* noStateTest() {
+      const harness = makeCliHarness();
+
+      yield* harness.run(["uninstall"]);
+
+      expect(harness.calls).toEqual([]);
+      expect(harness.lifecycleCalls).toEqual(["uninstall"]);
+      expect(harness.stdout).toContain("No Weave-managed VM state found");
+    })
+);
+
+it.effect("reports deferred Windows removal and its recovery log", () =>
+  Effect.gen(function* deferredRemovalTest() {
+    const harness = makeCliHarness({
+      lifecycle: {
+        uninstallResult: {
+          deferred: true,
+          path: "C:\\Users\\dev\\.local\\bin\\weave.exe",
+          recoveryLog: "C:\\Temp\\weave-lifecycle.cmd.error.log",
+        },
+      },
+    });
+
+    yield* harness.run(["uninstall"]);
+
+    expect(harness.stdout.join("\n")).toContain(
+      "✔ Scheduled removal of Weave CLI from C:\\Users\\dev\\.local\\bin\\weave.exe"
+    );
+    expect(harness.stdout.join("\n")).toContain(
+      "Windows will remove the executable after this process exits"
+    );
+    expect(harness.stdout.join("\n")).toContain(
+      "C:\\Temp\\weave-lifecycle.cmd.error.log"
+    );
   })
 );
 

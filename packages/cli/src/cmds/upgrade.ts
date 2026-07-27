@@ -36,10 +36,24 @@ export const upgrade = Command.make("upgrade", {}, () =>
         break;
       }
       case "Upgraded": {
-        yield* Console.log(
-          `✔ Upgraded Weave ${result.fromVersion} → ${result.toVersion}`
-        );
-        yield* Console.log(`Installed atomically at ${result.path}`);
+        if (result.deferred) {
+          yield* Console.log(
+            `✔ Scheduled Weave ${result.fromVersion} → ${result.toVersion}`
+          );
+          yield* Console.log(
+            `Windows will replace ${result.path} atomically after this process exits`
+          );
+          if (result.recoveryLog !== undefined) {
+            yield* Console.log(
+              `Any deferred replacement failure will be recorded in ${result.recoveryLog}`
+            );
+          }
+        } else {
+          yield* Console.log(
+            `✔ Upgraded Weave ${result.fromVersion} → ${result.toVersion}`
+          );
+          yield* Console.log(`Installed atomically at ${result.path}`);
+        }
         break;
       }
       default: {
@@ -49,7 +63,7 @@ export const upgrade = Command.make("upgrade", {}, () =>
   }).pipe(Effect.catch(reportUpgradeError))
 ).pipe(
   Command.withDescription(
-    "Upgrade the installed CLI to the latest compatible release"
+    "Upgrade the installed CLI to the latest stable release"
   ),
   Command.withExamples([{ command: "weave upgrade" }])
 );

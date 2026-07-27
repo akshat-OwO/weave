@@ -44,7 +44,11 @@ interface CliHarnessOptions {
   readonly existingVm?: boolean;
   readonly lifecycle?: {
     readonly uninstallError?: CliLifecycleError;
-    readonly uninstallPath?: string;
+    readonly uninstallResult?: {
+      readonly deferred: boolean;
+      readonly path: string;
+      readonly recoveryLog?: string;
+    };
     readonly upgradeError?: CliLifecycleError;
     readonly upgradeResult?: UpgradeResult;
   };
@@ -53,6 +57,7 @@ interface CliHarnessOptions {
     readonly stderr: string;
     readonly stdout: string;
   }[];
+  readonly managedState?: boolean;
   readonly processOutputs?: readonly string[];
   readonly ttlExpiresAtByVm?: Readonly<Record<string, number>>;
 }
@@ -102,7 +107,12 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
       if (options.lifecycle?.uninstallError !== undefined) {
         return yield* options.lifecycle.uninstallError;
       }
-      return options.lifecycle?.uninstallPath ?? "/usr/local/bin/weave";
+      return (
+        options.lifecycle?.uninstallResult ?? {
+          deferred: false,
+          path: "/usr/local/bin/weave",
+        }
+      );
     }),
     upgrade: (installedVersion) =>
       Effect.gen(function* upgradeHandler() {
@@ -129,6 +139,10 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
   });
   const fileSystem = FileSystem.makeNoop({
     exists: (path) => {
+      if (options.managedState === true && path === limaHome) {
+        return Effect.succeed(true);
+      }
+
       if (options.existingVm === true && path === `${limaHome}/dev`) {
         return Effect.succeed(true);
       }

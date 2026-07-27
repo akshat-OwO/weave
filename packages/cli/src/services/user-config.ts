@@ -18,24 +18,14 @@ export const UserConfig = Context.Service<{
   init: () => Effect.Effect<void>;
 }>("weave/services/userConfig");
 
-const createConfigIfNotExists = Effect.fn(
-  "weave/services/userConfig/helper/createConfigIfNotExists"
-)(function* createConfigIfNotExists(fs: FileSystem.FileSystem) {
-  const configPath = Match.value(process.platform).pipe(
+const configPathForPlatform = (): string =>
+  Match.value(process.platform).pipe(
     Match.when("win32", () =>
       // oxlint-disable-next-line no-non-null-assertion
       path.join(process.env.APPDATA!, "weave")
     ),
     Match.orElse(() => path.join(os.homedir(), "weave"))
   );
-
-  const configExists = yield* fs.exists(configPath);
-  if (!configExists) {
-    yield* fs.makeDirectory(configPath, { recursive: true });
-  }
-
-  return configPath;
-});
 
 interface RuntimePaths {
   readonly runtime: string;
@@ -83,7 +73,7 @@ export const UserConfigLive = Layer.effect(
   Effect.gen(function* handler() {
     const fs = yield* FileSystem.FileSystem;
 
-    const configPath = yield* createConfigIfNotExists(fs);
+    const configPath = configPathForPlatform();
     const runtimePath = path.join(configPath, "runtimes", "lima", LIMA_VERSION);
     const runtimeStatePath = path.join(runtimePath, "state");
     const executablePath = path.join(

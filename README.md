@@ -105,7 +105,7 @@ A template can only be supplied when creating a new VM, not when restarting an e
 | `weave shell <name> "<command>"` | Run a command in a running VM |
 | `weave stop <name>` | Stop a VM without deleting it |
 | `weave kill <name>` | Permanently delete a VM |
-| `weave upgrade` | Atomically upgrade to the latest compatible release |
+| `weave upgrade` | Atomically upgrade to the latest stable release |
 | `weave uninstall` | Stop managed VMs and remove only the CLI binary |
 
 Run `weave <command> --help` for command-specific examples and options.

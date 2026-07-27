@@ -11,6 +11,7 @@ it.effect("upgrades the installed CLI and reports the replacement path", () =>
       lifecycle: {
         upgradeResult: {
           _tag: "Upgraded",
+          deferred: false,
           fromVersion: cliPackage.version,
           path: "/opt/weave/bin/weave",
           toVersion: "0.0.2",
@@ -27,6 +28,35 @@ it.effect("upgrades the installed CLI and reports the replacement path", () =>
       "Installed atomically at /opt/weave/bin/weave",
     ]);
     expect(harness.stderr).toEqual([]);
+  })
+);
+
+it.effect("reports a deferred Windows replacement and its recovery log", () =>
+  Effect.gen(function* deferredUpgradeTest() {
+    const harness = makeCliHarness({
+      lifecycle: {
+        upgradeResult: {
+          _tag: "Upgraded",
+          deferred: true,
+          fromVersion: cliPackage.version,
+          path: "C:\\Users\\dev\\.local\\bin\\weave.exe",
+          recoveryLog: "C:\\Temp\\weave-lifecycle.cmd.error.log",
+          toVersion: "0.1.0",
+        },
+      },
+    });
+
+    yield* harness.run(["upgrade"]);
+
+    expect(harness.stdout.join("\n")).toContain(
+      `✔ Scheduled Weave ${cliPackage.version} → 0.1.0`
+    );
+    expect(harness.stdout.join("\n")).toContain(
+      "Windows will replace C:\\Users\\dev\\.local\\bin\\weave.exe atomically after this process exits"
+    );
+    expect(harness.stdout.join("\n")).toContain(
+      "C:\\Temp\\weave-lifecycle.cmd.error.log"
+    );
   })
 );
 

@@ -1,4 +1,4 @@
-import { Cause, Console, Effect, Exit } from "effect";
+import { Cause, Console, Effect, Exit, FileSystem } from "effect";
 import { Command } from "effect/unstable/cli";
 
 import { CliLifecycleError } from "../schemas/errors/cli-lifecycle.schema";
@@ -20,7 +20,26 @@ const reportLifecycleError = (error: CliLifecycleError) =>
   });
 
 const stopRunningVms = Effect.gen(function* stopRunningVmsHandler() {
+  const fs = yield* FileSystem.FileSystem;
   const lima = yield* LimaRuntime;
+  const userConfig = yield* UserConfig;
+  const hasManagedState = yield* fs.exists(userConfig.lima.home).pipe(
+    Effect.mapError(
+      (error) =>
+        new CliLifecycleError({
+          detail: `Could not inspect managed VM state: ${error.message}`,
+          phase: "removal",
+          recovery:
+            "The CLI was not removed. Verify access to the Weave data directory and retry `weave uninstall`.",
+        })
+    )
+  );
+
+  if (!hasManagedState) {
+    yield* Console.log("No Weave-managed VM state found");
+    return;
+  }
+
   const discovery = yield* Effect.exit(lima.capture(["list"]));
   if (Exit.isFailure(discovery)) {
     return yield* new CliLifecycleError({
@@ -79,8 +98,22 @@ export const uninstall = Command.make("uninstall", {}, () =>
 
     yield* Console.log("Preparing to uninstall Weave…");
     yield* stopRunningVms;
-    const removedPath = yield* lifecycle.uninstall;
-    yield* Console.log(`✔ Removed Weave CLI from ${removedPath}`);
+    const removal = yield* lifecycle.uninstall;
+    if (removal.deferred) {
+      yield* Console.log(
+        `✔ Scheduled removal of Weave CLI from ${removal.path}`
+      );
+      yield* Console.log(
+        "Windows will remove the executable after this process exits"
+      );
+      if (removal.recoveryLog !== undefined) {
+        yield* Console.log(
+          `Any deferred removal failure will be recorded in ${removal.recoveryLog}`
+        );
+      }
+    } else {
+      yield* Console.log(`✔ Removed Weave CLI from ${removal.path}`);
+    }
     yield* Console.log(retainedDataMessage(userConfig.configPath));
     yield* Console.log(
       "No persistent data was deleted. Remove that directory manually only if you no longer need any Weave VMs or data."

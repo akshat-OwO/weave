@@ -29,6 +29,12 @@ export interface CliRelease {
   readonly version: string;
 }
 
+export interface LifecycleMutation {
+  readonly deferred: boolean;
+  readonly path: string;
+  readonly recoveryLog?: string;
+}
+
 export type UpgradeResult =
   | {
       readonly _tag: "Current";
@@ -41,8 +47,10 @@ export type UpgradeResult =
     }
   | {
       readonly _tag: "Upgraded";
+      readonly deferred: boolean;
       readonly fromVersion: string;
       readonly path: string;
+      readonly recoveryLog?: string;
       readonly toVersion: string;
     };
 
@@ -113,23 +121,6 @@ export const compareVersions = (left: string, right: string): number => {
   );
 };
 
-export const isCompatibleVersion = (
-  installedVersion: string,
-  candidateVersion: string
-): boolean => {
-  const installed = parseVersion(installedVersion);
-  const candidate = parseVersion(candidateVersion);
-
-  if (installed === undefined || candidate === undefined) {
-    return false;
-  }
-
-  return (
-    installed.major === candidate.major &&
-    (installed.major !== 0 || installed.minor === candidate.minor)
-  );
-};
-
 const platformName = (platform: NodeJS.Platform): string | undefined => {
   switch (platform) {
     case "darwin": {
@@ -176,13 +167,12 @@ export const releaseAssetName = (
   return `weave-bun-${os}-${arch}${extension}`;
 };
 
-export const selectLatestCompatibleRelease = (
-  installedVersion: string,
+export const selectLatestRelease = (
   releases: readonly CliRelease[]
 ): CliRelease | undefined =>
-  releases
-    .filter(({ version }) => isCompatibleVersion(installedVersion, version))
-    .toSorted((left, right) => compareVersions(right.version, left.version))[0];
+  releases.toSorted((left, right) =>
+    compareVersions(right.version, left.version)
+  )[0];
 
 export interface CliLifecyclePlatformService {
   readonly executablePath: Effect.Effect<string, CliLifecycleError>;
@@ -192,8 +182,8 @@ export interface CliLifecyclePlatformService {
   >;
   readonly install: (
     release: CliRelease
-  ) => Effect.Effect<string, CliLifecycleError>;
-  readonly remove: Effect.Effect<string, CliLifecycleError>;
+  ) => Effect.Effect<LifecycleMutation, CliLifecycleError>;
+  readonly remove: Effect.Effect<LifecycleMutation, CliLifecycleError>;
 }
 
 export const CliLifecyclePlatform =
@@ -202,7 +192,7 @@ export const CliLifecyclePlatform =
   );
 
 export const CliLifecycle = Context.Service<{
-  readonly uninstall: Effect.Effect<string, CliLifecycleError>;
+  readonly uninstall: Effect.Effect<LifecycleMutation, CliLifecycleError>;
   readonly upgrade: (
     installedVersion: string
   ) => Effect.Effect<UpgradeResult, CliLifecycleError>;
@@ -221,6 +211,146 @@ const lifecycleError = (
 
 const causeDetail = (cause: Cause.Cause<unknown>): string =>
   Cause.pretty(cause).split("\n")[0] ?? "Unknown failure";
+
+export type WindowsDeferredLifecycleOperation =
+  | {
+      readonly _tag: "Remove";
+    }
+  | {
+      readonly _tag: "Replace";
+      readonly stagedPath: string;
+    };
+
+export interface WindowsDeferredLifecycleOptions {
+  readonly helperPath: string;
+  readonly operation: WindowsDeferredLifecycleOperation;
+  readonly parentPid: number;
+  readonly recoveryLog: string;
+  readonly targetPath: string;
+}
+
+const escapeBatchValue = (value: string): string =>
+  value.replaceAll("%", "%%").replaceAll('"', '""');
+
+export const windowsDeferredLifecycleScript = ({
+  helperPath,
+  operation,
+  parentPid,
+  recoveryLog,
+  targetPath,
+}: WindowsDeferredLifecycleOptions): string => {
+  const helper = escapeBatchValue(helperPath);
+  const recovery = escapeBatchValue(recoveryLog);
+  const target = escapeBatchValue(targetPath);
+  const action =
+    operation._tag === "Replace"
+      ? `move /Y "${escapeBatchValue(operation.stagedPath)}" "${target}" >NUL 2>&1`
+      : `del /F /Q "${target}" >NUL 2>&1`;
+  const failure =
+    operation._tag === "Replace"
+      ? `echo Weave could not replace "${target}". The original executable is intact and the verified update remains at "${escapeBatchValue(operation.stagedPath)}".`
+      : `echo Weave could not remove "${target}". The executable is intact.`;
+
+  return [
+    "@echo off",
+    "setlocal",
+    ":wait_for_weave",
+    `tasklist /FI "PID eq ${parentPid}" /NH 2>NUL | findstr /R /C:"[ ]${parentPid}[ ]" >NUL`,
+    "if not errorlevel 1 (",
+    "  timeout /T 1 /NOBREAK >NUL",
+    "  goto wait_for_weave",
+    ")",
+    action,
+    "if errorlevel 1 (",
+    `  >"${recovery}" ${failure}`,
+    "  goto cleanup",
+    ")",
+    `if exist "${recovery}" del /F /Q "${recovery}" >NUL 2>&1`,
+    ":cleanup",
+    `del /F /Q "${helper}" >NUL 2>&1`,
+    "endlocal",
+    "",
+  ].join("\r\n");
+};
+
+export const windowsDeferredLifecycleCommand = (helperPath: string) =>
+  ChildProcess.make("cmd.exe", ["/d", "/s", "/c", `"${helperPath}"`], {
+    detached: true,
+    stderr: "ignore",
+    stdin: "ignore",
+    stdout: "ignore",
+  });
+
+export interface WindowsLifecycleSchedulerDependencies {
+  readonly launch: (
+    command: ChildProcess.Command
+  ) => Effect.Effect<void, unknown>;
+  readonly makeHelperPath: Effect.Effect<string, unknown>;
+  readonly parentPid: number;
+  readonly removeArtifact: (artifactPath: string) => Effect.Effect<void>;
+  readonly writeHelper: (
+    helperPath: string,
+    contents: string
+  ) => Effect.Effect<void, unknown>;
+}
+
+export const makeWindowsLifecycleScheduler =
+  ({
+    launch,
+    makeHelperPath,
+    parentPid,
+    removeArtifact,
+    writeHelper,
+  }: WindowsLifecycleSchedulerDependencies) =>
+  (target: string, operation: WindowsDeferredLifecycleOperation) =>
+    Effect.gen(function* scheduleWindowsLifecycleHandler() {
+      const helperPath = yield* makeHelperPath;
+      const recoveryLog = `${helperPath}.error.log`;
+      const script = windowsDeferredLifecycleScript({
+        helperPath,
+        operation,
+        parentPid,
+        recoveryLog,
+        targetPath: target,
+      });
+      const scheduled = yield* Effect.exit(
+        writeHelper(helperPath, script).pipe(
+          Effect.andThen(launch(windowsDeferredLifecycleCommand(helperPath)))
+        )
+      );
+
+      if (Exit.isFailure(scheduled)) {
+        yield* removeArtifact(helperPath);
+        if (operation._tag === "Replace") {
+          yield* removeArtifact(operation.stagedPath);
+        }
+        return yield* lifecycleError(
+          operation._tag === "Replace" ? "replacement" : "removal",
+          causeDetail(scheduled.cause),
+          operation._tag === "Replace"
+            ? `The original binary at ${target} is intact. Verify Windows process permissions and retry.`
+            : `The CLI remains at ${target}. Verify Windows process permissions and retry.`
+        );
+      }
+
+      return {
+        deferred: true,
+        path: target,
+        recoveryLog,
+      };
+    }).pipe(
+      Effect.mapError((error) =>
+        error instanceof CliLifecycleError
+          ? error
+          : lifecycleError(
+              operation._tag === "Replace" ? "replacement" : "removal",
+              String(error),
+              operation._tag === "Replace"
+                ? `The original binary at ${target} is intact. Verify temporary-directory permissions and retry.`
+                : `The CLI remains at ${target}. Verify temporary-directory permissions and retry.`
+            )
+      )
+    );
 
 const mapPlatformError =
   (phase: CliLifecycleError["phase"], recovery: string) =>
@@ -425,6 +555,28 @@ export const CliLifecyclePlatformLive = Layer.effect(
     const fs = yield* FileSystem.FileSystem;
     const processSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
+    const scheduleWindowsLifecycle = makeWindowsLifecycleScheduler({
+      launch: (command) =>
+        Effect.scoped(
+          Effect.gen(function* launchHelperHandler() {
+            const handle = yield* processSpawner.spawn(command);
+            yield* handle.unref;
+          })
+        ),
+      makeHelperPath: fs.makeTempFile({
+        prefix: "weave-lifecycle-",
+        suffix: ".cmd",
+      }),
+      parentPid: process.pid,
+      removeArtifact: (artifactPath) =>
+        fs.remove(artifactPath, { force: true }).pipe(Effect.ignore),
+      writeHelper: (helperPath, contents) =>
+        Effect.tryPromise({
+          catch: (error) => error,
+          try: () => Bun.write(helperPath, contents),
+        }).pipe(Effect.asVoid),
+    });
+
     const runPrivileged = (args: readonly string[]) =>
       processSpawner
         .exitCode(
@@ -520,10 +672,33 @@ export const CliLifecyclePlatformLive = Layer.effect(
         })
       );
 
+    const installOnWindows = (target: string, bytes: Uint8Array) =>
+      Effect.gen(function* installOnWindowsHandler() {
+        const stagedPath = `${target}.weave-new-${process.pid}-${crypto.randomUUID()}`;
+        const written = yield* Effect.exit(writeBytes(stagedPath, bytes));
+        if (Exit.isFailure(written)) {
+          yield* fs.remove(stagedPath, { force: true }).pipe(Effect.ignore);
+          return yield* lifecycleError(
+            "replacement",
+            causeDetail(written.cause),
+            `The original binary at ${target} is intact. Verify installation-directory permissions and retry.`
+          );
+        }
+
+        return yield* scheduleWindowsLifecycle(target, {
+          _tag: "Replace",
+          stagedPath,
+        });
+      });
+
     const install = (release: CliRelease) =>
       Effect.gen(function* installHandler() {
         const target = yield* currentExecutable;
         const bytes = yield* downloadAsset(release);
+        if (process.platform === "win32") {
+          return yield* installOnWindows(target, bytes);
+        }
+
         const direct = yield* Effect.exit(installDirectly(target, bytes));
 
         if (Exit.isFailure(direct)) {
@@ -540,22 +715,18 @@ export const CliLifecyclePlatformLive = Layer.effect(
           );
         }
 
-        return target;
+        return { deferred: false, path: target };
       });
 
     const remove = Effect.gen(function* removeHandler() {
       const target = yield* currentExecutable;
-      const direct = yield* Effect.exit(fs.remove(target));
-      if (Exit.isSuccess(direct)) {
-        return target;
+      if (process.platform === "win32") {
+        return yield* scheduleWindowsLifecycle(target, { _tag: "Remove" });
       }
 
-      if (process.platform === "win32") {
-        return yield* lifecycleError(
-          "removal",
-          causeDetail(direct.cause),
-          `VMs and data were retained. Remove ${target} manually after Weave exits.`
-        );
+      const direct = yield* Effect.exit(fs.remove(target));
+      if (Exit.isSuccess(direct)) {
+        return { deferred: false, path: target };
       }
 
       const privileged = yield* Effect.exit(
@@ -595,7 +766,7 @@ export const CliLifecyclePlatformLive = Layer.effect(
         );
       }
 
-      return target;
+      return { deferred: false, path: target };
     });
 
     return CliLifecyclePlatform.of({
@@ -613,10 +784,7 @@ export const makeCliLifecycle = (platform: CliLifecyclePlatformService) =>
     upgrade: (installedVersion) =>
       Effect.gen(function* upgradeHandler() {
         const releases = yield* platform.fetchReleases;
-        const latest = selectLatestCompatibleRelease(
-          installedVersion,
-          releases
-        );
+        const latest = selectLatestRelease(releases);
 
         if (latest === undefined) {
           return {
@@ -640,11 +808,15 @@ export const makeCliLifecycle = (platform: CliLifecyclePlatformService) =>
           };
         }
 
-        const installedPath = yield* platform.install(latest);
+        const installed = yield* platform.install(latest);
         return {
           _tag: "Upgraded",
+          deferred: installed.deferred,
           fromVersion: installedVersion,
-          path: installedPath,
+          path: installed.path,
+          ...(installed.recoveryLog === undefined
+            ? {}
+            : { recoveryLog: installed.recoveryLog }),
           toVersion: latest.version,
         };
       }),

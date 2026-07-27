@@ -60,7 +60,7 @@ Upgrade an installed binary in place:
 weave upgrade
 ```
 
-The command preserves the existing executable if checking, downloading, or atomically replacing the release fails.
+The command selects the newest stable release, including newer minor or major versions. It preserves the existing executable if checking, downloading, or atomically replacing the release fails. On Windows, a detached helper waits for the current process to exit before replacing the executable.
 
 Remove the CLI:
 
@@ -68,6 +68,6 @@ Remove the CLI:
 weave uninstall
 ```
 
-Uninstall first stops all running Weave-managed VMs. It removes only the CLI binary and retains the runtime, configuration, VM disks, and guest user data in `~/weave` on macOS and Linux or `%APPDATA%\weave` on Windows. Persistent data is never deleted automatically; remove that directory manually only after confirming that you no longer need it.
+Uninstall first stops all running Weave-managed VMs. A never-used installation skips Lima initialization, and Windows defers executable deletion until the CLI exits. It removes only the CLI binary and retains the runtime, configuration, VM disks, and guest user data in `~/weave` on macOS and Linux or `%APPDATA%\weave` on Windows. Persistent data is never deleted automatically; remove that directory manually only after confirming that you no longer need it.
 
 Continue to the [quick start](/docs/quick-start) to create your first VM.
