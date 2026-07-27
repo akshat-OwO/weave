@@ -22,7 +22,7 @@ import {
   limaProgressLine,
 } from "../lib/lima-progress";
 import { UnsafeVmBackendError } from "../schemas/errors/unsafe-vm-backend.schema";
-import { UserConfig, UserConfigLive } from "./user-config";
+import { UserConfig } from "./user-config";
 
 interface RunOptions {
   readonly acceptableExitCodes?: readonly number[];
@@ -91,6 +91,7 @@ export const LimaRuntimeLive = Layer.effect(
     return LimaRuntime.of({
       assertIsolated: (instance) =>
         Effect.gen(function* assertIsolatedHandler() {
+          yield* userConfig.init();
           if (process.platform === "win32") {
             const command = ChildProcess.make(
               userConfig.lima.executable,
@@ -113,6 +114,7 @@ export const LimaRuntimeLive = Layer.effect(
       capture: (args) =>
         Effect.scoped(
           Effect.gen(function* captureHandler() {
+            yield* userConfig.init();
             const command = ChildProcess.make(
               userConfig.lima.executable,
               args,
@@ -153,6 +155,7 @@ export const LimaRuntimeLive = Layer.effect(
         ),
       run: (args, options) =>
         Effect.gen(function* runHandler() {
+          yield* userConfig.init();
           const acceptableExitCodes = options?.acceptableExitCodes ?? [0];
 
           if (options?.progress === undefined) {
@@ -301,5 +304,5 @@ export const LimaRuntimeLive = Layer.effect(
           }
         }),
     });
-  }).pipe(Effect.provide(UserConfigLive))
+  })
 );

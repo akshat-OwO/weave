@@ -52,4 +52,22 @@ Set `WEAVE_VERSION` to a GitHub release tag:
 
 The installer will not replace an existing installation with an older release.
 
+## Upgrade or uninstall
+
+Upgrade an installed binary in place:
+
+```sh
+weave upgrade
+```
+
+The command preserves the existing executable if checking, downloading, or atomically replacing the release fails.
+
+Remove the CLI:
+
+```sh
+weave uninstall
+```
+
+Uninstall first stops all running Weave-managed VMs. It removes only the CLI binary and retains the runtime, configuration, VM disks, and guest user data in `~/weave` on macOS and Linux or `%APPDATA%\weave` on Windows. Persistent data is never deleted automatically; remove that directory manually only after confirming that you no longer need it.
+
 Continue to the [quick start](/docs/quick-start) to create your first VM.

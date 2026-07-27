@@ -9,6 +9,9 @@ import type { ChildProcess } from "effect/unstable/process";
 import cliPackage from "../../package.json" with { type: "json" };
 import { weave } from "../../src/cmds";
 import { vmTtlMetadataPath } from "../../src/lib/vm-ttl";
+import type { CliLifecycleError } from "../../src/schemas/errors/cli-lifecycle.schema";
+import { CliLifecycle } from "../../src/services/cli-lifecycle";
+import type { UpgradeResult } from "../../src/services/cli-lifecycle";
 import { LimaRuntime } from "../../src/services/lima-runtime";
 import { UserConfig } from "../../src/services/user-config";
 
@@ -28,6 +31,7 @@ export interface CliHarness {
     readonly contents: string;
     readonly path: string;
   }[];
+  readonly lifecycleCalls: readonly string[];
   readonly processCalls: ChildProcess.Command[];
   readonly stderr: string[];
   readonly stdout: string[];
@@ -38,6 +42,13 @@ export interface CliHarness {
 
 interface CliHarnessOptions {
   readonly existingVm?: boolean;
+  readonly lifecycle?: {
+    readonly uninstallError?: CliLifecycleError;
+    readonly uninstallPath?: string;
+    readonly upgradeError?: CliLifecycleError;
+    readonly upgradeResult?: UpgradeResult;
+  };
+  readonly limaRunFailures?: readonly string[];
   readonly limaOutputs?: readonly {
     readonly stderr: string;
     readonly stdout: string;
@@ -56,6 +67,7 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
     readonly path: string;
   }[] = [];
   const limaOutputs = [...(options.limaOutputs ?? [])];
+  const lifecycleCalls: string[] = [];
   const processCalls: ChildProcess.Command[] = [];
   const processOutputs = [...(options.processOutputs ?? [])];
   const stderr: string[] = [];
@@ -69,12 +81,41 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
         return limaOutputs.shift() ?? { stderr: "", stdout: "" };
       }),
     run: (args, runOptions) =>
-      Effect.sync(() => {
+      Effect.gen(function* limaRunHandler() {
         calls.push({
           acceptableExitCodes: runOptions?.acceptableExitCodes,
           args,
           progress: runOptions?.progress,
         });
+        const name = args.at(-1);
+        if (
+          name !== undefined &&
+          options.limaRunFailures?.includes(name) === true
+        ) {
+          return yield* Effect.die(`simulated failure for ${name}`);
+        }
+      }),
+  });
+  const lifecycle = CliLifecycle.of({
+    uninstall: Effect.gen(function* uninstallHandler() {
+      lifecycleCalls.push("uninstall");
+      if (options.lifecycle?.uninstallError !== undefined) {
+        return yield* options.lifecycle.uninstallError;
+      }
+      return options.lifecycle?.uninstallPath ?? "/usr/local/bin/weave";
+    }),
+    upgrade: (installedVersion) =>
+      Effect.gen(function* upgradeHandler() {
+        lifecycleCalls.push(`upgrade:${installedVersion}`);
+        if (options.lifecycle?.upgradeError !== undefined) {
+          return yield* options.lifecycle.upgradeError;
+        }
+        return (
+          options.lifecycle?.upgradeResult ?? {
+            _tag: "Current",
+            installedVersion,
+          }
+        );
       }),
   });
   const userConfig = UserConfig.of({
@@ -144,6 +185,7 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
         version: cliPackage.version,
       })(args).pipe(
         Effect.provideService(LimaRuntime, lima),
+        Effect.provideService(CliLifecycle, lifecycle),
         Effect.provideService(UserConfig, userConfig),
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(
@@ -158,5 +200,13 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
       );
     });
 
-  return { calls, fileWrites, processCalls, run, stderr, stdout };
+  return {
+    calls,
+    fileWrites,
+    lifecycleCalls,
+    processCalls,
+    run,
+    stderr,
+    stdout,
+  };
 };
