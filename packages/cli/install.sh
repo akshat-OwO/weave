@@ -80,6 +80,10 @@ elif [ "$install_dir_is_explicit" -eq 0 ]; then
   fi
 fi
 
+if [ -n "$existing_path" ] && [ -L "$existing_path" ]; then
+  fail "existing Weave at $existing_path is a symbolic link; upgrade it with the tool that manages the link or set WEAVE_INSTALL_DIR to a non-symlink location"
+fi
+
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/weave-install.XXXXXX")"
 download_path="$tmp_dir/$binary_name"
 release_metadata_path="$tmp_dir/release.json"
