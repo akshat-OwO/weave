@@ -24,6 +24,8 @@ it.effect("exposes help, version, every command, and the list alias", () =>
       "kill",
       "shell",
       "ssh",
+      "upgrade",
+      "uninstall",
     ]) {
       expect(help).toContain(name);
     }

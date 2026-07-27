@@ -29,6 +29,14 @@ export const vmNamesFromList = (stdout: string): readonly string[] =>
     .filter((row) => row !== undefined)
     .map(({ name }) => name);
 
+export const runningVmNamesFromList = (stdout: string): readonly string[] =>
+  stdout
+    .trim()
+    .split(/\r?\n/u)
+    .slice(1)
+    .map(parseVmRow)
+    .flatMap((row) => (row?.status === "Running" ? [row.name] : []));
+
 export const formatVmList = (
   stdout: string,
   expiresAtByVm: ReadonlyMap<string, number> = new Map(),

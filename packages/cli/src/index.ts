@@ -4,18 +4,23 @@ import { Command } from "effect/unstable/cli";
 
 import cliPackage from "../package.json" with { type: "json" };
 import { weave } from "./cmds";
+import {
+  CliLifecycleLive,
+  CliLifecyclePlatformLive,
+} from "./services/cli-lifecycle";
 import { LimaRuntimeLive } from "./services/lima-runtime";
-import { UserConfig, UserConfigLive } from "./services/user-config";
+import { UserConfigLive } from "./services/user-config";
 
 const DependenciesLive = Layer.merge(BunServices.layer, UserConfigLive);
 
-const AppLive = LimaRuntimeLive.pipe(Layer.provideMerge(DependenciesLive));
+const InfrastructureLive = Layer.merge(
+  LimaRuntimeLive,
+  CliLifecyclePlatformLive
+).pipe(Layer.provideMerge(DependenciesLive));
+
+const AppLive = CliLifecycleLive.pipe(Layer.provideMerge(InfrastructureLive));
 
 const program = Effect.gen(function* programHandler() {
-  const userConfig = yield* UserConfig;
-
-  yield* userConfig.init();
-
   yield* Command.run(weave, { version: cliPackage.version });
 });
 
