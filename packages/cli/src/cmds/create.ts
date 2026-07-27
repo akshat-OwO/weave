@@ -204,14 +204,22 @@ export const create = Command.make(
           ? [`--memory=${memorySize.value}`]
           : [];
         yield* ensureWindowsQemuAvailable;
-        yield* lima.run([
-          "edit",
-          "--tty=false",
-          "--mount-none",
-          ...cpuArguments,
-          ...memoryArguments,
-          vmName,
-        ]);
+        yield* lima.run(
+          [
+            "edit",
+            "--tty=false",
+            "--mount-none",
+            ...cpuArguments,
+            ...memoryArguments,
+            vmName,
+          ],
+          {
+            progress: {
+              failureMessage: "Failed to update virtual machine configuration",
+              initialMessage: "Updating virtual machine configuration…",
+            },
+          }
+        );
         yield* lima.run(["start", "--tty=false", vmName], {
           progress: {
             failureMessage: "Failed to start virtual machine",

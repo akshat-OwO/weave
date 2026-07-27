@@ -4,6 +4,7 @@ import { Option } from "effect";
 import {
   decodeLimaLogLine,
   formatLimaLog,
+  limaActionableDiagnosticLine,
   limaProgressLine,
   limaProgressMessage,
 } from "../../src/lib/lima-progress";
@@ -79,6 +80,28 @@ it("maps Lima readiness messages to coarse milestones", () => {
 it("ignores malformed and unrelated Lima logs", () => {
   expect(Option.isNone(decodeLimaLogLine("not json"))).toBe(true);
   expect(Option.isNone(limaProgressMessage("Forwarding TCP"))).toBe(true);
+});
+
+it("keeps actionable diagnostics while suppressing informational logs", () => {
+  expect(
+    Option.isNone(
+      limaActionableDiagnosticLine(
+        '{"level":"info","msg":"Aborting, no changes made to the instance"}'
+      )
+    )
+  ).toBe(true);
+  expect(
+    Option.getOrUndefined(
+      limaActionableDiagnosticLine(
+        '{"level":"warning","msg":"Using a deprecated configuration"}'
+      )
+    )
+  ).toBe("WARNING Using a deprecated configuration");
+  expect(
+    Option.getOrUndefined(
+      limaActionableDiagnosticLine("ERRO[0001] Failed to inspect disk")
+    )
+  ).toBe("ERROR Failed to inspect disk");
 });
 
 it("maps both plain downloader output and structured logs", () => {

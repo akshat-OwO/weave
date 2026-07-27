@@ -18,6 +18,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
   decodeLimaLogLine,
   formatLimaLog,
+  limaActionableDiagnosticLine,
   limaProgressLine,
 } from "../lib/lima-progress";
 import { UnsafeVmBackendError } from "../schemas/errors/unsafe-vm-backend.schema";
@@ -187,8 +188,15 @@ export const LimaRuntimeLive = Layer.effect(
           );
           const message = yield* Ref.make(options.progress.initialMessage);
           const diagnostics = yield* Ref.make<readonly string[]>([]);
+          const actionableDiagnostics = yield* Ref.make<readonly string[]>([]);
           const appendDiagnostic = (line: string) =>
             Ref.update(diagnostics, (lines) => {
+              const next = lines.slice(-(maximumDiagnosticLines - 1));
+              next.push(line);
+              return next;
+            });
+          const appendActionableDiagnostic = (line: string) =>
+            Ref.update(actionableDiagnostics, (lines) => {
               const next = lines.slice(-(maximumDiagnosticLines - 1));
               next.push(line);
               return next;
@@ -196,11 +204,15 @@ export const LimaRuntimeLive = Layer.effect(
           const consumeLine = (line: string) => {
             const decoded = decodeLimaLogLine(line);
             const progressMessage = limaProgressLine(line);
+            const actionableDiagnostic = limaActionableDiagnosticLine(line);
 
             if (Option.isNone(decoded)) {
               return Effect.all(
                 [
                   appendDiagnostic(line),
+                  Option.isSome(actionableDiagnostic)
+                    ? appendActionableDiagnostic(actionableDiagnostic.value)
+                    : Effect.void,
                   Option.isSome(progressMessage)
                     ? Ref.set(message, progressMessage.value)
                     : Effect.void,
@@ -212,6 +224,9 @@ export const LimaRuntimeLive = Layer.effect(
             return Effect.all(
               [
                 appendDiagnostic(formatLimaLog(decoded.value)),
+                Option.isSome(actionableDiagnostic)
+                  ? appendActionableDiagnostic(actionableDiagnostic.value)
+                  : Effect.void,
                 Option.isSome(progressMessage)
                   ? Ref.set(message, progressMessage.value)
                   : Effect.void,
@@ -278,6 +293,11 @@ export const LimaRuntimeLive = Layer.effect(
               yield* Console.error(output.join("\n"));
             }
             return yield* Effect.die(`Command exited with code ${exitCode}`);
+          }
+
+          const output = yield* Ref.get(actionableDiagnostics);
+          if (output.length > 0) {
+            yield* Console.error(output.join("\n"));
           }
         }),
     });
