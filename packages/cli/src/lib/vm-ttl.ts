@@ -1,6 +1,9 @@
 import path from "node:path";
 
-import { Effect, FileSystem, Option, Schema } from "effect";
+import { Clock, Effect, FileSystem, Option, Schema } from "effect";
+
+import type { Ttl } from "../schemas/ttl.schema";
+import { LimaRuntime } from "../services/lima-runtime";
 
 const VmTtlMetadata = Schema.Struct({
   expiresAt: Schema.Number,
@@ -22,6 +25,29 @@ export const writeVmTtl = Effect.fn("weave/lib/vmTtl/writeVmTtl")(
     const contents = Schema.encodeSync(VmTtlMetadataJson)({ expiresAt });
 
     yield* fs.writeFileString(vmTtlMetadataPath(limaHome, name), contents);
+  }
+);
+
+export const scheduleVmTtl = Effect.fn("weave/lib/vmTtl/scheduleVmTtl")(
+  function* scheduleVmTtlHandler(limaHome: string, name: string, ttl: Ttl) {
+    const lima = yield* LimaRuntime;
+    const expiresAt = (yield* Clock.currentTimeMillis) + ttl.seconds * 1000;
+
+    yield* lima.run([
+      "shell",
+      name,
+      "--",
+      "sudo",
+      "systemd-run",
+      "--quiet",
+      "--unit=weave-ttl",
+      `--on-active=${ttl.seconds}s`,
+      "--timer-property=AccuracySec=1s",
+      "--collect",
+      "systemctl",
+      "poweroff",
+    ]);
+    yield* writeVmTtl(limaHome, name, expiresAt);
   }
 );
 

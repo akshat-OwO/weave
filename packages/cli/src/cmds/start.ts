@@ -1,0 +1,104 @@
+import path from "node:path";
+
+import { Clock, Console, Effect, FileSystem, Schema } from "effect";
+import { Argument, Command, Flag } from "effect/unstable/cli";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+
+import { scheduleVmTtl } from "../lib/vm-ttl";
+import { VmAlreadyRunningError } from "../schemas/errors/vm-already-running.schema";
+import { VmNotFoundError } from "../schemas/errors/vm-not-found.schema";
+import { Ttl } from "../schemas/ttl.schema";
+import { VmName } from "../schemas/vm-name.schema";
+import { LimaRuntime } from "../services/lima-runtime";
+import { UserConfig } from "../services/user-config";
+
+const ttl = Flag.string("ttl").pipe(
+  Flag.withSchema(Ttl),
+  Flag.withDefault(Schema.decodeUnknownSync(Ttl)("10m")),
+  Flag.withMetavar("DURATION"),
+  Flag.withDescription(
+    "Time to live: <number>s, <number>m, <number>h, or <number>d"
+  )
+);
+
+export const start = Command.make(
+  "start",
+  {
+    name: Argument.string("name").pipe(
+      Argument.withSchema(VmName),
+      Argument.withDescription("Name of the stopped VM to start")
+    ),
+    ttl,
+  },
+  ({ name, ttl: vmTtl }) =>
+    Effect.gen(function* startHandler() {
+      const startedAt = yield* Clock.currentTimeMillis;
+      const fs = yield* FileSystem.FileSystem;
+      const lima = yield* LimaRuntime;
+      const processSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const userConfig = yield* UserConfig;
+      const exists = yield* fs.exists(path.join(userConfig.lima.home, name));
+
+      if (!exists) {
+        return yield* new VmNotFoundError({ name });
+      }
+
+      yield* lima.assertIsolated(name);
+      const statusCommand = ChildProcess.make(
+        userConfig.lima.executable,
+        ["list", name, "--format={{.Status}}"],
+        {
+          env: {
+            ...Bun.env,
+            LIMA_HOME: userConfig.lima.home,
+            LIMA_TEMPLATES_PATH: path.join(
+              userConfig.lima.runtime,
+              "share",
+              "lima",
+              "templates"
+            ),
+          },
+          extendEnv: true,
+        }
+      );
+      const status = yield* processSpawner.string(statusCommand).pipe(
+        Effect.map((output) => output.trim()),
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.NonEmptyString))
+      );
+
+      if (status !== "Stopped") {
+        return yield* new VmAlreadyRunningError({ name });
+      }
+
+      yield* lima.run(["start", "--tty=false", name], {
+        progress: {
+          failureMessage: `Failed to start ${name}`,
+          initialMessage: `Starting ${name}…`,
+        },
+      });
+      yield* scheduleVmTtl(userConfig.lima.home, name, vmTtl);
+
+      const finishedAt = yield* Clock.currentTimeMillis;
+      const elapsedSeconds = Math.max(
+        0,
+        Math.round((finishedAt - startedAt) / 1000)
+      );
+      yield* Console.log(
+        `✔ Started ${name} in ${elapsedSeconds}s (TTL: ${vmTtl.value})`
+      );
+    })
+).pipe(
+  Command.withDescription(
+    "Start a stopped VM without changing its configuration or disk"
+  ),
+  Command.withExamples([
+    {
+      command: "weave start dev",
+      description: "Start a stopped VM with a new 10m TTL",
+    },
+    {
+      command: "weave start dev --ttl 1h",
+      description: "Start a stopped VM with a custom TTL",
+    },
+  ])
+);

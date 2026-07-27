@@ -11,7 +11,17 @@ Create a new VM or restart a stopped VM:
 weave create <name> [--cpus <count>] [--memory <GiB>] [--ttl <duration>] [--template <name-or-path>]
 ```
 
-The default TTL is 10 minutes. A template can only be supplied when creating a new VM, not when restarting an existing one.
+The default TTL is 10 minutes. A template can only be supplied when creating a new VM, not when restarting an existing one. For backward compatibility, `create` continues to restart stopped VMs and can update their CPU or memory configuration; use `start` when no configuration change is intended.
+
+## `start`
+
+Start an existing stopped VM without changing its configuration or virtual disk:
+
+```sh
+weave start <name> [--ttl <duration>]
+```
+
+Starting assigns a new 10-minute TTL by default. Set `--ttl` to choose another duration. The command reports an error when the VM does not exist or is already running.
 
 ## `ls`
 

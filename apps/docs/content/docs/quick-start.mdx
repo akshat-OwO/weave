@@ -47,7 +47,15 @@ Stop the VM without deleting its virtual disk:
 weave stop dev
 ```
 
-Restarting a stopped VM with `weave create dev` assigns it a new TTL. When you no longer need its disk or data, delete it permanently:
+Start it again with the same configuration and disk:
+
+```sh
+weave start dev
+```
+
+Starting assigns a new 10-minute TTL by default; use `weave start dev --ttl 1h` to set another duration. `weave create dev` also continues to restart stopped VMs for backward compatibility and can update their CPU or memory configuration.
+
+When you no longer need the VM's disk or data, delete it permanently:
 
 ```sh
 weave kill dev

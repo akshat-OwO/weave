@@ -13,7 +13,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { resolveVmTemplate } from "../lib/vm-template";
-import { writeVmTtl } from "../lib/vm-ttl";
+import { scheduleVmTtl } from "../lib/vm-ttl";
 import { QemuNotFoundError } from "../schemas/errors/qemu-not-found.schema";
 import { TemplateOnExistingVmError } from "../schemas/errors/template-on-existing-vm.schema";
 import { VmAlreadyExistsError } from "../schemas/errors/vm-already-exists.schema";
@@ -259,22 +259,7 @@ export const create = Command.make(
         );
       }
 
-      const expiresAt = (yield* Clock.currentTimeMillis) + vmTtl.seconds * 1000;
-      yield* lima.run([
-        "shell",
-        vmName,
-        "--",
-        "sudo",
-        "systemd-run",
-        "--quiet",
-        "--unit=weave-ttl",
-        `--on-active=${vmTtl.seconds}s`,
-        "--timer-property=AccuracySec=1s",
-        "--collect",
-        "systemctl",
-        "poweroff",
-      ]);
-      yield* writeVmTtl(userConfig.lima.home, vmName, expiresAt);
+      yield* scheduleVmTtl(userConfig.lima.home, vmName, vmTtl);
 
       const action = exists ? "Started" : "Created";
       const finishedAt = yield* Clock.currentTimeMillis;
@@ -287,9 +272,7 @@ export const create = Command.make(
       );
     })
 ).pipe(
-  Command.withDescription(
-    "Create and start an isolated VM with no host directories mounted"
-  ),
+  Command.withDescription("Create a new VM or restart a stopped VM"),
   Command.withExamples([
     {
       command: "weave create dev",
