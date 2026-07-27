@@ -110,7 +110,7 @@ jobs:
             }
           ' "$changelog" > "$release_notes_body"
 
-          if ! rg --quiet '[^[:space:]]' "$release_notes_body"; then
+          if ! grep -q '[^[:space:]]' "$release_notes_body"; then
             echo "No changelog entry found for ${version}" >&2
             exit 1
           fi
