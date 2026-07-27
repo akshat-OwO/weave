@@ -64,7 +64,13 @@ Customize its CPU count, integer memory in GiB, and TTL:
 weave create dev --cpus 4 --memory 8 --ttl 1h
 ```
 
-TTL values are a positive integer followed by `s`, `m`, `h`, or `d`. When the TTL expires, the guest shuts down but is not deleted. Running `weave create` again with the same name restarts a stopped VM and assigns it a new TTL.
+TTL values are a positive integer followed by `s`, `m`, `h`, or `d`. When the TTL expires, the guest shuts down but is not deleted. Restart it without changing its configuration or disk:
+
+```sh
+weave start dev
+```
+
+Starting assigns a new 10-minute TTL by default. Use `weave start dev --ttl 1h` to choose another duration. For backward compatibility, `weave create` with the same name also continues to restart a stopped VM, and its resource flags can update the existing configuration.
 
 ### Templates
 
@@ -93,6 +99,7 @@ A template can only be supplied when creating a new VM, not when restarting an e
 | Command | Description |
 | --- | --- |
 | `weave create <name> [--cpus <count>] [--memory <GiB>] [--ttl <duration>] [--template <name-or-path>]` | Create a new VM or restart a stopped one |
+| `weave start <name> [--ttl <duration>]` | Start a stopped VM without changing its configuration or disk |
 | `weave ls` | List VMs, their status, and remaining TTL (`list` is an alias) |
 | `weave ssh <name>` | Open an interactive shell in a running VM |
 | `weave shell <name> "<command>"` | Run a command in a running VM |
@@ -105,7 +112,7 @@ Run `weave <command> --help` for command-specific examples and options.
 
 On macOS and Linux, Weave stores its bundled runtime, templates, and VM state under `~/weave`. On Windows, it uses `%APPDATA%\weave`.
 
-Weave passes `--mount-none` whenever it creates or restarts a VM. This prevents Lima from mounting host directories into the guest. VMs retain their own virtual disk when stopped and continue to have network access. Use `weave kill <name>` when the disk and its data are no longer needed.
+Weave passes `--mount-none` when it creates or starts a VM. `weave start` first verifies that the persisted Lima configuration has no host-directory mounts and refuses to start an externally modified VM until `weave create <name>` safely removes them. CPU, memory, and disk configuration remain unchanged. VMs retain their own virtual disk when stopped and continue to have network access. Use `weave kill <name>` when the disk and its data are no longer needed.
 
 ## Development
 

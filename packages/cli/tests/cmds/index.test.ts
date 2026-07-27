@@ -19,6 +19,7 @@ it.effect("exposes help, version, every command, and the list alias", () =>
       "create",
       "ls",
       "list",
+      "start",
       "stop",
       "kill",
       "shell",
