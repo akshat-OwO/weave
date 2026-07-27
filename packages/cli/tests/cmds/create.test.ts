@@ -119,7 +119,10 @@ describe("create", () => {
             "--memory=3",
             "dev",
           ],
-          progress: undefined,
+          progress: {
+            failureMessage: "Failed to update virtual machine configuration",
+            initialMessage: "Updating virtual machine configuration…",
+          },
         },
         {
           acceptableExitCodes: undefined,
@@ -156,6 +159,28 @@ describe("create", () => {
           path: "/test/weave/lima-home/dev/.weave-ttl.json",
         },
       ]);
+    })
+  );
+
+  it.effect("restarts a stopped VM with no configuration changes", () =>
+    Effect.gen(function* restartWithoutChangesTest() {
+      const harness = makeCliHarness({
+        existingVm: true,
+        processOutputs: ["Stopped"],
+      });
+
+      yield* harness.run(["create", "dev"]);
+
+      expect(harness.calls[0]).toEqual({
+        acceptableExitCodes: undefined,
+        args: ["edit", "--tty=false", "--mount-none", "dev"],
+        progress: {
+          failureMessage: "Failed to update virtual machine configuration",
+          initialMessage: "Updating virtual machine configuration…",
+        },
+      });
+      expect(harness.stdout).toEqual(["✔ Started dev in 0s (TTL: 10m)"]);
+      expect(harness.stderr).toEqual([]);
     })
   );
 

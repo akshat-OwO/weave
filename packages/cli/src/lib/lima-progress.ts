@@ -11,6 +11,20 @@ export type LimaLog = typeof LimaLog.Type;
 
 export const decodeLimaLogLine = Schema.decodeUnknownOption(LimaLogLine);
 
+const actionableLogLevels = new Set([
+  "error",
+  "fatal",
+  "panic",
+  "warn",
+  "warning",
+]);
+const plainDiagnosticPattern =
+  /^(?<level>WARN(?:ING)?|ERRO(?:R)?|FATAL|PANIC)\[\d+\]\s*(?<message>.*)$/iu;
+const plainLevelAliases: Readonly<Record<string, string>> = {
+  ERRO: "ERROR",
+  WARN: "WARNING",
+};
+
 export const limaProgressMessage = (message: string): Option.Option<string> => {
   if (message.includes("Downloading ")) {
     return Option.some("Downloading Ubuntu image…");
@@ -64,3 +78,30 @@ export const limaProgressLine = (line: string): Option.Option<string> => {
 
 export const formatLimaLog = (log: LimaLog): string =>
   `${log.level.toUpperCase()} ${log.msg}`;
+
+export const limaActionableDiagnosticLine = (
+  line: string
+): Option.Option<string> => {
+  const decoded = decodeLimaLogLine(line);
+
+  if (Option.isSome(decoded)) {
+    return actionableLogLevels.has(decoded.value.level.toLowerCase())
+      ? Option.some(formatLimaLog(decoded.value))
+      : Option.none();
+  }
+
+  const match = plainDiagnosticPattern.exec(line);
+
+  if (match === null) {
+    return Option.none();
+  }
+
+  const level = match.groups?.level?.toUpperCase();
+  const message = match.groups?.message;
+
+  if (level === undefined || message === undefined) {
+    return Option.none();
+  }
+
+  return Option.some(`${plainLevelAliases[level] ?? level} ${message}`);
+};
