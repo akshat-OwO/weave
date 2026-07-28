@@ -50,6 +50,8 @@ bun run --cwd packages/cli build
 
 The build produces executables for all supported platform and architecture combinations.
 
+For fresh installations, the release installer places `weave` under the user-owned `~/.local/bin` directory by default, so installation, upgrades, and uninstallation do not require administrator access.
+
 ## Usage
 
 Create a VM with the default 10-minute TTL:
