@@ -105,6 +105,7 @@ A template can only be supplied when creating a new VM, not when restarting an e
 | `weave ls` | List VMs, their status, and remaining TTL (`list` is an alias) |
 | `weave ssh <name>` | Open an interactive shell in a running VM |
 | `weave shell <name> "<command>"` | Run a command in a running VM |
+| `weave cp <name> <file>... [--o <guest-directory>]` | Copy host files into a VM (guest home by default) |
 | `weave stop <name>` | Stop a VM without deleting it |
 | `weave kill <name>` | Permanently delete a VM |
 | `weave upgrade` | Atomically upgrade to the latest stable release |
@@ -117,6 +118,8 @@ Run `weave <command> --help` for command-specific examples and options.
 On macOS and Linux, Weave stores its bundled runtime, templates, and VM state under `~/weave`. On Windows, it uses `%APPDATA%\weave`.
 
 Weave passes `--mount-none` when `create` or `start` is invoked without a `--mount` flag. Pass one or more existing directories after `--mount` to expose only those host directories; append `:w` for writable access. Each invocation replaces the previous mount set, while CPU, memory, and disk configuration remain unchanged unless explicitly updated. VMs retain their own virtual disk when stopped and continue to have network access. Use `weave kill <name>` when the disk and its data are no longer needed.
+
+Use `weave cp dev ./package.json ./src/index.ts --o /dev` to copy host files onto the VM's own disk. Omit `--o` to copy them to the guest user's home directory (`~`). Changes to those guest copies do not affect the original host files. Weave can copy into protected guest directories such as `/dev` by staging the files and installing them with guest-side elevated permissions.
 
 `weave uninstall` discovers and stops every running VM in Weave's dedicated Lima state before removing the CLI. It retains the bundled runtime, configuration, VM disks, and guest user data. If VM discovery, shutdown, or binary removal fails, it reports the recovery action and does not silently delete persistent data. Remove the Weave data directory manually only after confirming that none of its VMs or data are needed.
 
