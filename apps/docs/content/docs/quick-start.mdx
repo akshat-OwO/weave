@@ -33,6 +33,14 @@ Or run a one-off command:
 weave shell dev "uname -a"
 ```
 
+Copy host files onto the VM's own disk when you want to modify them without changing the originals:
+
+```sh
+weave cp dev ./package.json ./src/index.ts --o /dev
+```
+
+The destination defaults to the guest user's home directory (`~`) when `--o` is omitted.
+
 ## Inspect and clean up
 
 List your VMs and their remaining TTL:

@@ -17,6 +17,7 @@ it.effect("exposes help, version, every command, and the list alias", () =>
 
     for (const name of [
       "create",
+      "cp",
       "ls",
       "list",
       "start",

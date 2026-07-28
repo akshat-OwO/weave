@@ -13,6 +13,16 @@ weave create dev --mount ./src ./config ./tmp:w
 
 Every `create` or `start` replaces the previous mount set. Omitting `--mount` removes all mounts, protecting host files from commands intended to run only inside a disposable environment.
 
+## Isolated copies
+
+Copy one or more host files onto the VM's own disk:
+
+```sh
+weave cp dev ./package.json ./src/index.ts --o /dev
+```
+
+The VM can modify or remove these copies without changing the original host files. Omit `--o` to copy to the guest user's home directory (`~`). Weave creates a missing destination directory and can write to protected guest paths using guest-side elevated permissions.
+
 ## Guest persistence
 
 Stopping a VM does not remove its virtual disk. Its files remain available when the VM is restarted:

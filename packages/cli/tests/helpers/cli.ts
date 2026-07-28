@@ -1,3 +1,4 @@
+import * as BunCrypto from "@effect/platform-bun/BunCrypto";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import * as BunTerminal from "@effect/platform-bun/BunTerminal";
 import { Effect, FileSystem, Layer, Stdio, Stream } from "effect";
@@ -220,7 +221,12 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
           processSpawner
         ),
         Effect.provide(
-          Layer.mergeAll(BunPath.layer, BunTerminal.layer, Stdio.layerTest({}))
+          Layer.mergeAll(
+            BunCrypto.layer,
+            BunPath.layer,
+            BunTerminal.layer,
+            Stdio.layerTest({})
+          )
         ),
         Effect.mapError((error) => error as unknown),
         Effect.ensuring(captureOutput)
