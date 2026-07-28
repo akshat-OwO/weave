@@ -1,5 +1,11 @@
 # @weave/cli
 
+## 0.0.3
+
+### Patch Changes
+
+- [#16](https://github.com/akshat-OwO/weave/pull/16) [`5ad63fc`](https://github.com/akshat-OwO/weave/commit/5ad63fc067403f2c017c6f37b35a419eb198d0ca) Thanks [@akshat-OwO](https://github.com/akshat-OwO)! - Install Weave under the user-owned `~/.local/bin` directory by default and avoid interactive sudo password prompts when upgrade or uninstall runs without a terminal.
+
 ## 0.0.2
 
 ### Patch Changes
