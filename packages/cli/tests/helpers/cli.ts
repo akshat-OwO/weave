@@ -1,7 +1,17 @@
 import * as BunCrypto from "@effect/platform-bun/BunCrypto";
 import * as BunPath from "@effect/platform-bun/BunPath";
-import * as BunTerminal from "@effect/platform-bun/BunTerminal";
-import { Effect, FileSystem, Layer, Stdio, Stream } from "effect";
+import type { Cause } from "effect";
+import {
+  Effect,
+  FileSystem,
+  Layer,
+  Option,
+  PlatformError,
+  Queue,
+  Stdio,
+  Stream,
+  Terminal,
+} from "effect";
 import { TestConsole } from "effect/testing";
 import { Command } from "effect/unstable/cli";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -42,7 +52,9 @@ export interface CliHarness {
 }
 
 interface CliHarnessOptions {
+  readonly confirmStart?: boolean;
   readonly existingVm?: boolean;
+  readonly fileContents?: Readonly<Record<string, string>>;
   readonly lifecycle?: {
     readonly uninstallError?: CliLifecycleError;
     readonly uninstallResult?: {
@@ -71,16 +83,44 @@ const limaHome = `${configPath}/lima-home`;
 
 export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
   const calls: LimaCall[] = [];
+  const directories = new Set<string>();
   const fileWrites: {
     readonly contents: string;
     readonly path: string;
   }[] = [];
   const limaOutputs = [...(options.limaOutputs ?? [])];
   const lifecycleCalls: string[] = [];
+  const storedFiles = new Map(Object.entries(options.fileContents ?? {}));
+  let temporaryFileIndex = 0;
   const processCalls: ChildProcess.Command[] = [];
   const processOutputs = [...(options.processOutputs ?? [])];
   const stderr: string[] = [];
   const stdout: string[] = [];
+  const vmNames = new Set(options.existingVm === true ? ["dev"] : []);
+  const terminalLayer = Layer.effect(
+    Terminal.Terminal,
+    Effect.gen(function* testTerminalHandler() {
+      const input = yield* Queue.make<Terminal.UserInput, Cause.Done>();
+      const confirmed = options.confirmStart !== false;
+      Queue.offerUnsafe(input, {
+        input: confirmed ? Option.none() : Option.some("n"),
+        key: {
+          ctrl: false,
+          meta: false,
+          name: confirmed ? "enter" : "n",
+          shift: false,
+        },
+      });
+
+      return Terminal.make({
+        columns: Effect.succeed(80),
+        display: () => Effect.void,
+        readInput: Effect.succeed(input),
+        readLine: Effect.die("Unexpected terminal readLine call"),
+        rows: Effect.succeed(24),
+      });
+    })
+  );
 
   const lima = LimaRuntime.of({
     assertIsolated: () => Effect.void,
@@ -102,6 +142,25 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
           options.limaRunFailures?.includes(name) === true
         ) {
           return yield* Effect.die(`simulated failure for ${name}`);
+        }
+
+        if (args[0] === "start") {
+          const createdName = args
+            .find((argument) => argument.startsWith("--name="))
+            ?.slice("--name=".length);
+          if (createdName !== undefined) {
+            vmNames.add(createdName);
+          }
+        } else if (args[0] === "clone") {
+          const clonedName = args.at(-1);
+          if (clonedName !== undefined) {
+            vmNames.add(clonedName);
+          }
+        } else if (args[0] === "delete") {
+          const deletedName = args.at(-1);
+          if (deletedName !== undefined) {
+            vmNames.delete(deletedName);
+          }
         }
       }),
   });
@@ -151,7 +210,11 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
         return Effect.succeed(true);
       }
 
-      if (options.existingVm === true && path === `${limaHome}/dev`) {
+      if ([...vmNames].some((name) => path === `${limaHome}/${name}`)) {
+        return Effect.succeed(true);
+      }
+
+      if (storedFiles.has(path)) {
         return Effect.succeed(true);
       }
 
@@ -161,8 +224,45 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
         )
       );
     },
-    makeDirectory: () => Effect.void,
+    makeDirectory: (path, makeOptions) =>
+      Effect.suspend(() => {
+        if (directories.has(path) && makeOptions?.recursive !== true) {
+          return Effect.fail(
+            PlatformError.systemError({
+              _tag: "AlreadyExists",
+              method: "makeDirectory",
+              module: "FileSystem",
+              pathOrDescriptor: path,
+            })
+          );
+        }
+        directories.add(path);
+        return Effect.void;
+      }),
+    makeTempFile: (makeOptions) =>
+      Effect.sync(() => {
+        temporaryFileIndex += 1;
+        const temporaryPath = `${makeOptions?.directory ?? "/tmp"}/${makeOptions?.prefix ?? ""}${temporaryFileIndex}${makeOptions?.suffix ?? ""}`;
+        storedFiles.set(temporaryPath, "");
+        return temporaryPath;
+      }),
+    readDirectory: (directory) =>
+      Effect.sync(() => {
+        const prefix = `${directory}/`;
+        return [...storedFiles.keys()].flatMap((filePath) => {
+          if (!filePath.startsWith(prefix)) {
+            return [];
+          }
+          const entry = filePath.slice(prefix.length);
+          return entry.includes("/") ? [] : [entry];
+        });
+      }),
     readFileString: (path) => {
+      const contents = storedFiles.get(path);
+      if (contents !== undefined) {
+        return Effect.succeed(contents);
+      }
+
       const entry = Object.entries(options.ttlExpiresAtByVm ?? {}).find(
         ([name]) => path === vmTtlMetadataPath(limaHome, name)
       );
@@ -173,6 +273,33 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
         })
       );
     },
+    remove: (path, removeOptions) =>
+      Effect.sync(() => {
+        storedFiles.delete(path);
+        directories.delete(path);
+        if (removeOptions?.recursive === true) {
+          const prefix = `${path}/`;
+          for (const storedPath of storedFiles.keys()) {
+            if (storedPath.startsWith(prefix)) {
+              storedFiles.delete(storedPath);
+            }
+          }
+          for (const directory of directories) {
+            if (directory.startsWith(prefix)) {
+              directories.delete(directory);
+            }
+          }
+        }
+      }),
+    rename: (oldPath, newPath) =>
+      Effect.sync(() => {
+        const contents = storedFiles.get(oldPath);
+        if (contents === undefined) {
+          throw new Error(`Unexpected rename source ${oldPath}`);
+        }
+        storedFiles.delete(oldPath);
+        storedFiles.set(newPath, contents);
+      }),
     stat: (path) => {
       const type = options.mountPathTypes?.[path];
       return type === undefined
@@ -181,6 +308,7 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
     },
     writeFileString: (path, contents) =>
       Effect.sync(() => {
+        storedFiles.set(path, contents);
         fileWrites.push({ contents, path });
       }),
   });
@@ -224,7 +352,7 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
           Layer.mergeAll(
             BunCrypto.layer,
             BunPath.layer,
-            BunTerminal.layer,
+            terminalLayer,
             Stdio.layerTest({})
           )
         ),

@@ -17,7 +17,7 @@ describe("start", () => {
       expect(harness.calls).toEqual([
         {
           acceptableExitCodes: undefined,
-          args: ["start", "--tty=false", "--mount-none", "dev"],
+          args: ["start", "--tty=false", "--progress", "--mount-none", "dev"],
           progress: {
             failureMessage: "Failed to start dev",
             initialMessage: "Starting dev…",
@@ -111,6 +111,7 @@ describe("start", () => {
       expect(harness.calls[0]?.args).toEqual([
         "start",
         "--tty=false",
+        "--progress",
         "--mount-only=./src",
         "--mount-only=./config:w",
         "dev",

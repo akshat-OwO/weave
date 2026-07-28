@@ -1,6 +1,7 @@
 import { Clock, Console, Effect, Option } from "effect";
 import { Command } from "effect/unstable/cli";
 
+import { readVmBaseNames } from "../lib/vm-base-cache";
 import { formatRemainingTtl, readVmTtl } from "../lib/vm-ttl";
 import { LimaRuntime } from "../services/lima-runtime";
 import { UserConfig } from "../services/user-config";
@@ -20,13 +21,17 @@ const parseVmRow = (
     : { name, status };
 };
 
-export const vmNamesFromList = (stdout: string): readonly string[] =>
+export const vmNamesFromList = (
+  stdout: string,
+  internalBaseNames: ReadonlySet<string> = new Set()
+): readonly string[] =>
   stdout
     .trim()
     .split(/\r?\n/u)
     .slice(1)
     .map(parseVmRow)
     .filter((row) => row !== undefined)
+    .filter(({ name }) => !internalBaseNames.has(name))
     .map(({ name }) => name);
 
 export const runningVmNamesFromList = (stdout: string): readonly string[] =>
@@ -40,7 +45,8 @@ export const runningVmNamesFromList = (stdout: string): readonly string[] =>
 export const formatVmList = (
   stdout: string,
   expiresAtByVm: ReadonlyMap<string, number> = new Map(),
-  currentTimeMillis = 0
+  currentTimeMillis = 0,
+  internalBaseNames: ReadonlySet<string> = new Set()
 ): string => {
   const table = stdout.trimEnd() || emptyVmTable;
   const rows = table.split(/\r?\n/u);
@@ -55,6 +61,10 @@ export const formatVmList = (
   };
 
   return rows
+    .filter((row, index) => {
+      const vm = parseVmRow(row);
+      return index === 0 || vm === undefined || !internalBaseNames.has(vm.name);
+    })
     .map((row, index) => {
       if (index === 0) {
         return insertTtl(row, "TTL");
@@ -85,10 +95,11 @@ export const list = Command.make("ls", {}, () =>
     const lima = yield* LimaRuntime;
     const userConfig = yield* UserConfig;
     const output = yield* lima.capture(["list"]);
+    const internalBaseNames = yield* readVmBaseNames(userConfig.configPath);
     const warnings = formatVmListWarnings(output.stderr);
     const expiresAtByVm = new Map<string, number>();
 
-    for (const name of vmNamesFromList(output.stdout)) {
+    for (const name of vmNamesFromList(output.stdout, internalBaseNames)) {
       const expiresAt = yield* readVmTtl(userConfig.lima.home, name);
       if (Option.isSome(expiresAt)) {
         expiresAtByVm.set(name, expiresAt.value);
@@ -99,7 +110,12 @@ export const list = Command.make("ls", {}, () =>
       yield* Console.error(warnings);
     }
     yield* Console.log(
-      formatVmList(output.stdout, expiresAtByVm, yield* Clock.currentTimeMillis)
+      formatVmList(
+        output.stdout,
+        expiresAtByVm,
+        yield* Clock.currentTimeMillis,
+        internalBaseNames
+      )
     );
   })
 ).pipe(

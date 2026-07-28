@@ -96,6 +96,7 @@ export const start = Command.make(
         [
           "start",
           "--tty=false",
+          "--progress",
           ...limaMountArguments(
             yield* validateMountDirectories(remainingMountPaths)
           ),

@@ -7,11 +7,17 @@ it.effect(
   "ssh opens an interactive shell with expected terminal exit codes",
   () =>
     Effect.gen(function* sshTest() {
-      const harness = makeCliHarness();
+      const harness = makeCliHarness({
+        limaOutputs: [{ stderr: "", stdout: "Running\n" }],
+      });
 
       yield* harness.run(["ssh", "dev"]);
 
       expect(harness.calls).toEqual([
+        {
+          args: ["list", "dev", "--format={{.Status}}"],
+          captured: true,
+        },
         {
           acceptableExitCodes: [0, 100, 130],
           args: ["shell", "dev"],

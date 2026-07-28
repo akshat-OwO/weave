@@ -96,6 +96,30 @@ it.effect("shows the remaining TTL for running VMs", () =>
   })
 );
 
+it.effect("hides internal base VMs from the user-facing list", () =>
+  Effect.gen(function* hiddenBaseTest() {
+    const harness = makeCliHarness({
+      fileContents: {
+        "/test/weave/cache/vm-bases/cache-key.json":
+          '{"builtAt":0,"cacheKey":"cache-key","name":"wvbase-abc"}',
+      },
+      limaOutputs: [
+        {
+          stderr: "",
+          stdout:
+            "NAME           STATUS   DIR\nwvbase-abc     Stopped  /tmp/base\nwvbase-user    Stopped  /tmp/user\ndev            Running  /tmp/dev\n",
+        },
+      ],
+    });
+
+    yield* harness.run(["list"]);
+
+    expect(harness.stdout).toEqual([
+      "NAME           STATUS   TTL     DIR\nwvbase-user    Stopped  -       /tmp/user\ndev            Running  -       /tmp/dev",
+    ]);
+  })
+);
+
 it("formats expired and long TTL values", () => {
   expect(
     formatVmList(

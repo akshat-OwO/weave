@@ -20,14 +20,214 @@ const actionableLogLevels = new Set([
 ]);
 const plainDiagnosticPattern =
   /^(?<level>WARN(?:ING)?|ERRO(?:R)?|FATAL|PANIC)\[\d+\]\s*(?<message>.*)$/iu;
+const aptDownloadPattern =
+  /^\[cloud-init\]\s+Get:\d+\s+.+\[(?<amount>\d+(?:\.\d+)?)\s*(?<unit>B|kB|MB|GB)\]\s*$/u;
+const completedPackageDownloadPattern =
+  /^\[cloud-init\]\s+(?!Total(?:\s|$)).+\|\s*(?<amount>\d+(?:\.\d+)?)\s*(?<unit>B|kB|KB|MB|GB|KiB|MiB|GiB)\s+\d{2}:\d{2}\s*$/u;
+const aptFetchedPattern =
+  /^\[cloud-init\]\s+Fetched\s+(?<amount>\d+(?:\.\d+)?\s*(?:B|kB|MB|GB))\s+in\s+(?<duration>.+?)\s+\(/u;
+const aptRequiredDownloadPattern =
+  /^\[cloud-init\]\s+Need to get\s+(?<amount>\d+(?:\.\d+)?\s*(?:B|kB|MB|GB))\s+of archives/u;
+const packageIndexCommandPatterns = [
+  /\bapt(?:-get)?(?:\s+-\S+)*\s+update\b/u,
+  /\b(?:dnf|yum)(?:\s+-\S+)*\s+makecache\b/u,
+  /\bapk(?:\s+-\S+)*\s+update\b/u,
+  /\bpacman\b.*\s-\S*Sy\S*\b/u,
+] as const;
+const packageInstallCommandPatterns = [
+  /\bapt(?:-get)?(?:\s+-\S+)*\s+install\b/u,
+  /\b(?:dnf|yum)(?:\s+-\S+)*\s+(?:install|update|upgrade)\b/u,
+  /\bapk(?:\s+-\S+)*\s+add\b/u,
+  /\bpacman\b.*\s-\S*S\S*\b/u,
+] as const;
 const plainLevelAliases: Readonly<Record<string, string>> = {
   ERRO: "ERROR",
   WARN: "WARNING",
 };
+const KILOBYTE = 1000;
+const MEGABYTE = 1_000_000;
+const GIGABYTE = 1_000_000_000;
+const KIBIBYTE = 1024;
+const MEBIBYTE = 1024 * KIBIBYTE;
+const GIBIBYTE = 1024 * MEBIBYTE;
+const byteMultipliers: Readonly<Record<string, number>> = {
+  B: 1,
+  GB: GIGABYTE,
+  GiB: GIBIBYTE,
+  KB: KILOBYTE,
+  KiB: KIBIBYTE,
+  MB: MEGABYTE,
+  MiB: MEBIBYTE,
+  kB: KILOBYTE,
+};
+
+const messageFromLine = (line: string): string => {
+  const decoded = decodeLimaLogLine(line);
+  return Option.isSome(decoded) ? decoded.value.msg : line;
+};
+
+export type PackageDownloadPhase = "indexes" | "packages";
+
+export const limaPackageDownloadPhase = (
+  line: string
+): Option.Option<PackageDownloadPhase> => {
+  const message = messageFromLine(line);
+
+  if (!message.includes("[cloud-init]")) {
+    return Option.none();
+  }
+  if (packageIndexCommandPatterns.some((pattern) => pattern.test(message))) {
+    return Option.some("indexes");
+  }
+  if (packageInstallCommandPatterns.some((pattern) => pattern.test(message))) {
+    return Option.some("packages");
+  }
+  return Option.none();
+};
+
+export const limaPackageDownloadBytes = (
+  line: string
+): Option.Option<number> => {
+  const message = messageFromLine(line);
+  const match =
+    aptDownloadPattern.exec(message) ??
+    completedPackageDownloadPattern.exec(message);
+  const amount = match?.groups?.amount;
+  const unit = match?.groups?.unit;
+
+  if (amount === undefined || unit === undefined) {
+    return Option.none();
+  }
+
+  const multiplier = byteMultipliers[unit];
+  return multiplier === undefined
+    ? Option.none()
+    : Option.some(Number(amount) * multiplier);
+};
+
+export const formatDownloadBytes = (bytes: number): string => {
+  if (bytes >= GIGABYTE) {
+    return `${(bytes / GIGABYTE).toFixed(1)} GB`;
+  }
+  if (bytes >= MEGABYTE) {
+    return `${(bytes / MEGABYTE).toFixed(1)} MB`;
+  }
+  if (bytes >= KILOBYTE) {
+    return `${(bytes / KILOBYTE).toFixed(1)} kB`;
+  }
+  return `${bytes} B`;
+};
+
+export const formatProgressElapsed = (elapsedMillis: number): string => {
+  const elapsedSeconds = Math.max(0, Math.floor(elapsedMillis / 1000));
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+};
+
+const packageManagerProgressMessage = (
+  message: string
+): Option.Option<string> => {
+  const fetched = aptFetchedPattern.exec(message);
+  if (fetched?.groups?.amount !== undefined) {
+    const { duration } = fetched.groups;
+    return Option.some(
+      duration === undefined
+        ? `Downloaded VM dependencies (${fetched.groups.amount})`
+        : `Downloaded VM dependencies (${fetched.groups.amount} in ${duration})`
+    );
+  }
+
+  const requiredDownload = aptRequiredDownloadPattern.exec(message);
+  if (requiredDownload?.groups?.amount !== undefined) {
+    return Option.some(
+      `Downloading VM packages… ${requiredDownload.groups.amount} total`
+    );
+  }
+
+  if (/^\[cloud-init\]\s+Ign:\d+\s+/u.test(message)) {
+    return Option.some("Package mirror is slow; retrying…");
+  }
+
+  if (/^\[cloud-init\]\s+Err:\d+\s+/u.test(message)) {
+    return Option.some("Package mirror request failed; retrying…");
+  }
+
+  if (/^\[cloud-init\]\s+fetch\s+\S*APKINDEX\S*/u.test(message)) {
+    return Option.some("Downloading package indexes…");
+  }
+
+  if (/^\[cloud-init\]\s+fetch\s+\S+/u.test(message)) {
+    return Option.some("Downloading VM packages…");
+  }
+
+  if (/^\[cloud-init\]\s+.+(?:\.rpm\b|\.pkg\.tar\.\S+\b)/u.test(message)) {
+    return Option.some("Downloading VM packages…");
+  }
+
+  if (
+    /^\[cloud-init\]\s+.+(?:downloading|\.db\b)/iu.test(message) &&
+    /\.db\b/u.test(message)
+  ) {
+    return Option.some("Downloading package indexes…");
+  }
+
+  if (/^\[cloud-init\]\s+\S+\s+downloading\.\.\.\s*$/iu.test(message)) {
+    return Option.some("Downloading VM packages…");
+  }
+
+  if (packageIndexCommandPatterns.some((pattern) => pattern.test(message))) {
+    return Option.some("Updating package indexes…");
+  }
+
+  if (packageInstallCommandPatterns.some((pattern) => pattern.test(message))) {
+    return Option.some("Installing VM dependencies…");
+  }
+
+  return Option.none();
+};
+
+const cloudInitProgressMessage = (message: string): Option.Option<string> => {
+  if (!message.includes("[cloud-init]")) {
+    return Option.none();
+  }
+
+  const packageManagerProgress = packageManagerProgressMessage(message);
+  if (Option.isSome(packageManagerProgress)) {
+    return packageManagerProgress;
+  }
+
+  if (message.includes("nerdctl-full.tgz") && message.includes("tar Cxaf")) {
+    return Option.some(
+      message.includes(" bin/nerdctl")
+        ? "Checking container tooling…"
+        : "Extracting container tooling…"
+    );
+  }
+
+  if (
+    message.includes("containerd-rootless-setuptool.sh") ||
+    message.includes("systemctl enable --now containerd")
+  ) {
+    return Option.some("Starting container services…");
+  }
+
+  return Option.none();
+};
 
 export const limaProgressMessage = (message: string): Option.Option<string> => {
-  if (message.includes("Downloading ")) {
-    return Option.some("Downloading Ubuntu image…");
+  if (message.includes("Downloading the nerdctl archive")) {
+    return Option.some("Downloading container tooling…");
+  }
+
+  const cloudInitProgress = cloudInitProgressMessage(message);
+
+  if (Option.isSome(cloudInitProgress)) {
+    return cloudInitProgress;
+  }
+
+  if (!message.includes("[cloud-init]") && message.includes("Downloading ")) {
+    return Option.some("Downloading VM image…");
   }
 
   if (
@@ -50,6 +250,14 @@ export const limaProgressMessage = (message: string): Option.Option<string> => {
     return Option.some("Installing container tooling…");
   }
 
+  if (message.includes("Cloud-init provisioning started")) {
+    return Option.some("Provisioning virtual machine…");
+  }
+
+  if (message.includes("Cloud-init progress monitoring done")) {
+    return Option.some("Finishing virtual machine setup…");
+  }
+
   if (message.includes("boot scripts must have finished")) {
     return Option.some("Running boot scripts…");
   }
@@ -65,16 +273,8 @@ export const limaProgressMessage = (message: string): Option.Option<string> => {
   return Option.none();
 };
 
-export const limaProgressLine = (line: string): Option.Option<string> => {
-  const decoded = decodeLimaLogLine(line);
-
-  return limaProgressMessage(
-    Option.match(decoded, {
-      onNone: () => line,
-      onSome: (log) => log.msg,
-    })
-  );
-};
+export const limaProgressLine = (line: string): Option.Option<string> =>
+  limaProgressMessage(messageFromLine(line));
 
 export const formatLimaLog = (log: LimaLog): string =>
   `${log.level.toUpperCase()} ${log.msg}`;

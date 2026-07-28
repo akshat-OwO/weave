@@ -94,13 +94,21 @@ You can also provide a custom Lima YAML file:
 weave create custom-dev --template ./templates/custom.yaml
 ```
 
-A template can only be supplied when creating a new VM, not when restarting an existing one.
+Weave reuses cached bases for the default, Node.js, and Python environments for up to three days. Use `--fresh` to skip the cache and provision a new VM from scratch:
+
+```sh
+weave create node-dev --template node --fresh
+```
+
+The first cached create reports image, guest package, and container-tooling progress while preparing its base. Later compatible creates clone that base. Custom Lima YAML templates are always provisioned from scratch. `--fresh` bypasses the cache for one new VM without deleting or updating the cached base.
+
+A template and `--fresh` only affect newly created VMs, not restarted VMs.
 
 ### Commands
 
 | Command | Description |
 | --- | --- |
-| `weave create <name> [--cpus <count>] [--memory <GiB>] [--ttl <duration>] [--template <name-or-path>] [--mount <directory>...]` | Create a new VM or restart a stopped one |
+| `weave create <name> [--cpus <count>] [--memory <GiB>] [--ttl <duration>] [--template <name-or-path>] [--fresh] [--mount <directory>...]` | Create a new VM or restart a stopped one |
 | `weave start <name> [--ttl <duration>] [--mount <directory>...]` | Start a stopped VM with selected host mounts |
 | `weave ls` | List VMs, their status, and remaining TTL (`list` is an alias) |
 | `weave ssh <name>` | Open an interactive shell in a running VM |
