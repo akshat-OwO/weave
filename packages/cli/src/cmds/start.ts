@@ -4,8 +4,14 @@ import { Clock, Console, Effect, FileSystem, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
+import {
+  limaMountArguments,
+  mount,
+  mountPaths,
+  validateMountDirectories,
+} from "../lib/vm-mounts";
 import { scheduleVmTtl } from "../lib/vm-ttl";
-import { UnsafeVmMountsError } from "../schemas/errors/unsafe-vm-mounts.schema";
+import { InvalidMountArgumentsError } from "../schemas/errors/invalid-mount-arguments.schema";
 import { VmAlreadyRunningError } from "../schemas/errors/vm-already-running.schema";
 import { VmLifecycleStateError } from "../schemas/errors/vm-lifecycle-state.schema";
 import { VmNotFoundError } from "../schemas/errors/vm-not-found.schema";
@@ -23,20 +29,18 @@ const ttl = Flag.string("ttl").pipe(
   )
 );
 
-const LimaMountsJson = Schema.fromJsonString(
-  Schema.NullOr(Schema.Array(Schema.Unknown))
-);
-
 export const start = Command.make(
   "start",
   {
+    mount,
     name: Argument.string("name").pipe(
       Argument.withSchema(VmName),
       Argument.withDescription("Name of the stopped VM to start")
     ),
+    paths: mountPaths,
     ttl,
   },
-  ({ name, ttl: vmTtl }) =>
+  ({ mount: mountFlags, name, paths: remainingMountPaths, ttl: vmTtl }) =>
     Effect.gen(function* startHandler() {
       const startedAt = yield* Clock.currentTimeMillis;
       const fs = yield* FileSystem.FileSystem;
@@ -44,6 +48,14 @@ export const start = Command.make(
       const processSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const userConfig = yield* UserConfig;
       const exists = yield* fs.exists(path.join(userConfig.lima.home, name));
+
+      const mountEnabled = mountFlags[0] === true;
+      if (mountEnabled === (remainingMountPaths.length === 0)) {
+        return yield* new InvalidMountArgumentsError({
+          mountEnabled,
+          paths: remainingMountPaths,
+        });
+      }
 
       if (!exists) {
         return yield* new VmNotFoundError({ name });
@@ -80,25 +92,22 @@ export const start = Command.make(
         return yield* new VmLifecycleStateError({ name, status });
       }
 
-      const mountsOutput = yield* lima.capture([
-        "list",
-        name,
-        "--format={{json .Config.Mounts}}",
-      ]);
-      const mounts = yield* Schema.decodeUnknownEffect(LimaMountsJson)(
-        mountsOutput.stdout.trim()
+      yield* lima.run(
+        [
+          "start",
+          "--tty=false",
+          ...limaMountArguments(
+            yield* validateMountDirectories(remainingMountPaths)
+          ),
+          name,
+        ],
+        {
+          progress: {
+            failureMessage: `Failed to start ${name}`,
+            initialMessage: `Starting ${name}…`,
+          },
+        }
       );
-
-      if (mounts !== null && mounts.length > 0) {
-        return yield* new UnsafeVmMountsError({ name });
-      }
-
-      yield* lima.run(["start", "--tty=false", "--mount-none", name], {
-        progress: {
-          failureMessage: `Failed to start ${name}`,
-          initialMessage: `Starting ${name}…`,
-        },
-      });
       yield* scheduleVmTtl(userConfig.lima.home, name, vmTtl);
 
       const finishedAt = yield* Clock.currentTimeMillis;
@@ -111,9 +120,7 @@ export const start = Command.make(
       );
     })
 ).pipe(
-  Command.withDescription(
-    "Start a stopped VM without changing its configuration or disk"
-  ),
+  Command.withDescription("Start a stopped VM with selected host mounts"),
   Command.withExamples([
     {
       command: "weave start dev",
@@ -122,6 +129,10 @@ export const start = Command.make(
     {
       command: "weave start dev --ttl 1h",
       description: "Start a stopped VM with a custom TTL",
+    },
+    {
+      command: "weave start dev --mount ./src ./config",
+      description: "Start a stopped VM with selected host directories mounted",
     },
   ])
 );

@@ -63,6 +63,10 @@ describe("create", () => {
   it.effect("applies every create flag", () =>
     Effect.gen(function* createFlagsTest() {
       const harness = makeCliHarness({
+        mountPathTypes: {
+          "./config": "Directory",
+          "./src": "Directory",
+        },
         processOutputs: supportedNestedVirtualizationOutputs,
       });
 
@@ -77,6 +81,9 @@ describe("create", () => {
         "2h",
         "--template",
         "node",
+        "--mount",
+        "./src",
+        "./config",
       ]);
 
       expect(harness.calls[0]?.args).toEqual(
@@ -84,12 +91,135 @@ describe("create", () => {
           "--cpus=4",
           "--memory=6",
           "--name=dev",
+          "--mount-only=./src",
+          "--mount-only=./config",
           "/test/weave/templates/node.yaml",
         ])
       );
       expect(harness.calls[1]?.args).toContain("--on-active=7200s");
       expect(harness.stdout).toEqual(["✔ Created dev in 0s (TTL: 2h)"]);
       expect(harness.stderr).toEqual([]);
+    })
+  );
+
+  it.effect("replaces mounts when restarting a stopped VM", () =>
+    Effect.gen(function* restartWithMountsTest() {
+      const harness = makeCliHarness({
+        existingVm: true,
+        mountPathTypes: {
+          "./config": "Directory",
+          "./src": "Directory",
+        },
+        processOutputs: ["Stopped"],
+      });
+
+      yield* harness.run(["create", "dev", "--mount", "./src", "./config:w"]);
+
+      expect(harness.calls[0]?.args).toEqual([
+        "edit",
+        "--tty=false",
+        "--mount-only=./src",
+        "--mount-only=./config:w",
+        "dev",
+      ]);
+    })
+  );
+
+  it.effect("rejects files and missing mount directories", () =>
+    Effect.gen(function* invalidMountPathTest() {
+      for (const [mountPath, type, reason] of [
+        ["./package.json", "File", "expected a directory"],
+        ["./missing", undefined, "directory does not exist"],
+      ] as const) {
+        const harness = makeCliHarness({
+          mountPathTypes: { [mountPath]: type },
+        });
+        const error = yield* Effect.flip(
+          harness.run(["create", "dev", "--mount", mountPath])
+        );
+
+        expect(error).toMatchObject({
+          _tag: "InvalidMountPathError",
+          path: mountPath,
+          reason,
+        });
+        expect(harness.calls).toEqual([]);
+      }
+    })
+  );
+
+  it.effect("rejects mount paths without the mount flag", () =>
+    Effect.gen(function* mountFlagRequiredTest() {
+      const harness = makeCliHarness();
+      const error = yield* Effect.flip(
+        harness.run(["create", "dev", "./package.json"])
+      );
+
+      expect(error).toMatchObject({
+        _tag: "InvalidMountArgumentsError",
+        mountEnabled: false,
+        paths: ["./package.json"],
+      });
+      expect(harness.calls).toEqual([]);
+    })
+  );
+
+  it.effect("rejects the mount flag without paths", () =>
+    Effect.gen(function* mountPathsRequiredTest() {
+      const harness = makeCliHarness();
+      const error = yield* Effect.flip(
+        harness.run(["create", "dev", "--mount"])
+      );
+
+      expect(error).toMatchObject({
+        _tag: "InvalidMountArgumentsError",
+        mountEnabled: true,
+        paths: [],
+      });
+      expect(harness.calls).toEqual([]);
+    })
+  );
+
+  it.effect("rejects multiple mount flags", () =>
+    Effect.gen(function* multipleMountFlagsTest() {
+      const harness = makeCliHarness();
+      const error = yield* Effect.flip(
+        harness.run([
+          "create",
+          "dev",
+          "--mount",
+          "./src",
+          "--mount",
+          "./package.json",
+        ])
+      );
+
+      expect(error).toMatchObject({ _tag: "ShowHelp" });
+      expect(harness.calls).toEqual([]);
+    })
+  );
+
+  it.effect("honors a false mount flag", () =>
+    Effect.gen(function* falseMountFlagTest() {
+      const harness = makeCliHarness({
+        processOutputs: supportedNestedVirtualizationOutputs,
+      });
+
+      yield* harness.run(["create", "dev", "--no-mount"]);
+
+      expect(harness.calls[0]?.args).toContain("--mount-none");
+
+      const invalidHarness = makeCliHarness();
+      const error = yield* Effect.flip(
+        invalidHarness.run(["create", "dev", "--mount=false", "./src"])
+      );
+
+      expect(error).toMatchObject({
+        _tag: "InvalidMountArgumentsError",
+        mountEnabled: false,
+        paths: ["./src"],
+      });
+      expect(invalidHarness.calls).toEqual([]);
     })
   );
 

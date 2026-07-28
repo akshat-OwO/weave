@@ -58,6 +58,9 @@ interface CliHarnessOptions {
     readonly stdout: string;
   }[];
   readonly managedState?: boolean;
+  readonly mountPathTypes?: Readonly<
+    Record<string, FileSystem.File.Type | undefined>
+  >;
   readonly processOutputs?: readonly string[];
   readonly ttlExpiresAtByVm?: Readonly<Record<string, number>>;
 }
@@ -139,6 +142,10 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
   });
   const fileSystem = FileSystem.makeNoop({
     exists: (path) => {
+      if (Object.hasOwn(options.mountPathTypes ?? {}, path)) {
+        return Effect.succeed(options.mountPathTypes?.[path] !== undefined);
+      }
+
       if (options.managedState === true && path === limaHome) {
         return Effect.succeed(true);
       }
@@ -164,6 +171,12 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
           expiresAt: entry?.[1],
         })
       );
+    },
+    stat: (path) => {
+      const type = options.mountPathTypes?.[path];
+      return type === undefined
+        ? Effect.die(`Unexpected stat call for ${path}`)
+        : Effect.succeed({ type } as FileSystem.File.Info);
     },
     writeFileString: (path, contents) =>
       Effect.sync(() => {

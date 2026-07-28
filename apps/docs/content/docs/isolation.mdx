@@ -5,9 +5,13 @@ description: Understand Weave's mount, storage, and lifecycle behavior.
 
 ## Host isolation
 
-Weave passes `--mount-none` whenever it creates or restarts a VM. Lima therefore does not mount host directories into the guest.
+Weave mounts no host directories by default. Pass one or more existing directories after `--mount` to `create` or `start` to expose only those directories. Mounts are read-only unless a directory has Lima's `:w` suffix:
 
-This protects host files from commands that are intended to run only inside a disposable environment.
+```sh
+weave create dev --mount ./src ./config ./tmp:w
+```
+
+Every `create` or `start` replaces the previous mount set. Omitting `--mount` removes all mounts, protecting host files from commands intended to run only inside a disposable environment.
 
 ## Guest persistence
 
@@ -22,7 +26,7 @@ The restarted VM receives a new TTL. Use `weave kill dev` when you want to remov
 
 ## Network access
 
-Guests retain network access even though host-directory mounts are disabled.
+Guests retain network access even when host mounts are disabled.
 
 ## Weave data directory
 
