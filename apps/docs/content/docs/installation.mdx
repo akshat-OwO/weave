@@ -7,7 +7,9 @@ description: Install the correct Weave binary for your machine.
 
 Run the installer:
 
-<InstallCommand />
+```sh
+curl -fsSL https://weave.4kshat.dev/install.sh | sh
+```
 
 The script detects your operating system and CPU architecture, then installs the matching binary from the latest GitHub release as `weave`. Fresh installations default to `~/.local/bin`, a user-owned location that does not require administrator access.
 
@@ -28,7 +30,9 @@ weave --help
 <Callout title="Custom install directory">
   Set `WEAVE_INSTALL_DIR` to install somewhere other than `~/.local/bin`:
 
-<InstallCommand environment={'WEAVE_INSTALL_DIR="$HOME/bin"'} />
+```sh
+curl -fsSL https://weave.4kshat.dev/install.sh | WEAVE_INSTALL_DIR="$HOME/bin" sh
+```
 
 </Callout>
 
@@ -48,7 +52,9 @@ On Windows, you can point Weave to QEMU explicitly with `QEMU_SYSTEM_X86_64` or 
 
 Set `WEAVE_VERSION` to a GitHub release tag:
 
-<InstallCommand environment="WEAVE_VERSION=v0.1.0" />
+```sh
+curl -fsSL https://weave.4kshat.dev/install.sh | WEAVE_VERSION=v0.1.0 sh
+```
 
 The installer will not replace an existing installation with an older release.
 
