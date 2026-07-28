@@ -3,6 +3,7 @@ import { Effect, Exit } from "effect";
 
 import { CliLifecycleError } from "../../src/schemas/errors/cli-lifecycle.schema";
 import {
+  administratorArguments,
   compareVersions,
   makeCliLifecycle,
   makeWindowsLifecycleScheduler,
@@ -30,6 +31,13 @@ const makePlatform = (
     path: "/usr/local/bin/weave",
   }),
   ...overrides,
+});
+
+it("prevents sudo password prompts without an interactive terminal", () => {
+  const args = ["rm", "--", "/usr/local/bin/weave"];
+
+  expect(administratorArguments(args, false)).toEqual(["-n", ...args]);
+  expect(administratorArguments(args, true)).toBe(args);
 });
 
 it("selects the newest stable release across minor and major versions", () => {

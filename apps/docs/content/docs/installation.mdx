@@ -9,7 +9,7 @@ Run the installer:
 
 <InstallCommand />
 
-The script detects your operating system and CPU architecture, then installs the matching binary from the latest GitHub release as `weave`.
+The script detects your operating system and CPU architecture, then installs the matching binary from the latest GitHub release as `weave`. Fresh installations default to `~/.local/bin`, a user-owned location that does not require administrator access.
 
 Rerun the same command to upgrade. The installer checks the existing binary at the target path (or on `PATH` when using the default location), compares its version with the latest release, and only downloads a binary when an upgrade is available. Current and newer versions are left unchanged. Development or malformed versions must be replaced manually so the installer cannot accidentally downgrade them.
 
@@ -26,9 +26,9 @@ weave --help
 </Callout>
 
 <Callout title="Custom install directory">
-  Set `WEAVE_INSTALL_DIR` to install somewhere other than `/usr/local/bin`:
+  Set `WEAVE_INSTALL_DIR` to install somewhere other than `~/.local/bin`:
 
-<InstallCommand environment={'WEAVE_INSTALL_DIR="$HOME/.local/bin"'} />
+<InstallCommand environment={'WEAVE_INSTALL_DIR="$HOME/bin"'} />
 
 </Callout>
 

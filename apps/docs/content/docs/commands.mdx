@@ -82,7 +82,7 @@ weave upgrade
 
 Weave compares all stable releases and selects the newest version, including newer minor or major versions. The command never downgrades a newer installation and clearly reports when no update is needed.
 
-The update is downloaded before the installed executable is touched. Weave stages the new executable beside the existing one and replaces it atomically, so a download or replacement failure leaves the working binary in place. An installation under a privileged directory such as `/usr/local/bin` may prompt for administrator access.
+The update is downloaded before the installed executable is touched. Weave stages the new executable beside the existing one and replaces it atomically, so a download or replacement failure leaves the working binary in place. The default installation under `~/.local/bin` does not require administrator access. A custom or legacy installation under a privileged directory such as `/usr/local/bin` may prompt for it.
 
 On Windows, the running executable cannot replace itself. Weave starts a detached helper that waits for the CLI process to exit and then atomically moves the verified update into place. The command reports the recovery-log path used if that deferred operation fails.
 
@@ -94,7 +94,7 @@ Stop every running Weave-managed VM and remove the installed CLI:
 weave uninstall
 ```
 
-Weave discovers VMs from its dedicated Lima state directory. If any running VM cannot be stopped, uninstall aborts and leaves the CLI installed so you can resolve the failure and retry. Removing a CLI from a privileged directory may prompt for administrator access.
+Weave discovers VMs from its dedicated Lima state directory. If any running VM cannot be stopped, uninstall aborts and leaves the CLI installed so you can resolve the failure and retry. The default installation under `~/.local/bin` can be removed without administrator access. Removing a custom or legacy installation from a privileged directory may prompt for it.
 
 If no managed state directory exists, uninstall skips Lima discovery without extracting the bundled runtime. On Windows, a detached helper waits for the CLI process to exit before deleting the executable and records any deferred failure at the reported recovery-log path.
 

@@ -174,6 +174,11 @@ export const selectLatestRelease = (
     compareVersions(right.version, left.version)
   )[0];
 
+export const administratorArguments = (
+  args: readonly string[],
+  interactive = process.stdin.isTTY === true
+): readonly string[] => (interactive ? args : ["-n", ...args]);
+
 export interface CliLifecyclePlatformService {
   readonly executablePath: Effect.Effect<string, CliLifecycleError>;
   readonly fetchReleases: Effect.Effect<
@@ -580,7 +585,7 @@ export const CliLifecyclePlatformLive = Layer.effect(
     const runPrivileged = (args: readonly string[]) =>
       processSpawner
         .exitCode(
-          ChildProcess.make("sudo", args, {
+          ChildProcess.make("sudo", administratorArguments(args), {
             stderr: "inherit",
             stdin: "inherit",
             stdout: "inherit",
@@ -729,40 +734,28 @@ export const CliLifecyclePlatformLive = Layer.effect(
         return { deferred: false, path: target };
       }
 
-      const privileged = yield* Effect.exit(
-        processSpawner
-          .exitCode(
-            ChildProcess.make("sudo", ["rm", "--", target], {
-              stderr: "inherit",
-              stdin: "inherit",
-              stdout: "inherit",
-            })
-          )
-          .pipe(
-            Effect.mapError(
-              mapPlatformError(
-                "removal",
-                `VMs and data were retained. Remove ${target} manually or retry with administrator access.`
-              )
-            ),
-            Effect.flatMap((exitCode) =>
-              exitCode === 0
-                ? Effect.void
-                : Effect.fail(
-                    lifecycleError(
-                      "removal",
-                      `Administrator command exited with code ${exitCode}`,
-                      `VMs and data were retained. Remove ${target} manually or retry with administrator access.`
-                    )
-                  )
+      const sudoArguments = ["rm", "--", target];
+      const exitCode = yield* processSpawner
+        .exitCode(
+          ChildProcess.make("sudo", administratorArguments(sudoArguments), {
+            stderr: "inherit",
+            stdin: "inherit",
+            stdout: "inherit",
+          })
+        )
+        .pipe(
+          Effect.mapError(
+            mapPlatformError(
+              "removal",
+              `VMs and data were retained. Remove ${target} manually from an interactive terminal.`
             )
           )
-      );
-      if (Exit.isFailure(privileged)) {
+        );
+      if (exitCode !== 0) {
         return yield* lifecycleError(
           "removal",
-          causeDetail(privileged.cause),
-          `VMs and data were retained. The CLI remains at ${target}; retry with administrator access.`
+          `Administrator command exited with code ${exitCode}`,
+          `VMs and data were retained. Remove ${target} manually from an interactive terminal.`
         );
       }
 

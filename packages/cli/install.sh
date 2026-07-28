@@ -51,11 +51,8 @@ fi
 if [ -n "${WEAVE_INSTALL_DIR:-}" ]; then
   install_dir="$WEAVE_INSTALL_DIR"
   install_dir_is_explicit=1
-elif [ "$os" = "windows" ]; then
-  install_dir="$HOME/.local/bin"
-  install_dir_is_explicit=0
 else
-  install_dir="/usr/local/bin"
+  install_dir="$HOME/.local/bin"
   install_dir_is_explicit=0
 fi
 

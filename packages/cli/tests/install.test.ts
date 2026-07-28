@@ -188,6 +188,28 @@ describe("install script", () => {
     ).toMatchObject({ exitCode: 0, stdout: "weave v1.2.3\n" });
   });
 
+  it("defaults to a user-owned install directory", async () => {
+    const harness = await makeHarness();
+    const homeDirectory = path.join(harness.installDirectory, "home");
+    const installedBinary = path.join(homeDirectory, ".local", "bin", "weave");
+    await mkdir(homeDirectory);
+    await makeVersionBinary(harness.assetPath, "weave v1.2.3");
+
+    const result = await harness.run({
+      HOME: homeDirectory,
+      PATH: `${harness.toolsDirectory}:/usr/bin:/bin`,
+      WEAVE_INSTALL_DIR: "",
+    });
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(result.stdout).toContain(
+      `Weave was installed to ${installedBinary}`
+    );
+    expect(
+      await runProcess(installedBinary, ["--version"], process.env)
+    ).toMatchObject({ exitCode: 0, stdout: "weave v1.2.3\n" });
+  });
+
   it("uses stable line-oriented progress when output is redirected", async () => {
     const harness = await makeHarness();
     await makeVersionBinary(harness.assetPath, "weave v1.2.3");
