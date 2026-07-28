@@ -1,6 +1,7 @@
-import { Crypto, Effect } from "effect";
+import { Crypto, Effect, FileSystem } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
+import { InvalidCopySourceError } from "../schemas/errors/invalid-copy-source.schema";
 import { VmName } from "../schemas/vm-name.schema";
 import { LimaRuntime } from "../services/lima-runtime";
 
@@ -30,7 +31,27 @@ export const cp = Command.make(
   { instance, output, sources },
   ({ instance: vmName, output: guestDirectory, sources: hostFiles }) =>
     Effect.gen(function* cpHandler() {
+      const fs = yield* FileSystem.FileSystem;
       const lima = yield* LimaRuntime;
+
+      for (const hostFile of hostFiles) {
+        const exists = yield* fs.exists(hostFile);
+        if (!exists) {
+          return yield* new InvalidCopySourceError({
+            path: hostFile,
+            reason: "file does not exist",
+          });
+        }
+
+        const info = yield* fs.stat(hostFile);
+        if (info.type !== "File" && info.type !== "SymbolicLink") {
+          return yield* new InvalidCopySourceError({
+            path: hostFile,
+            reason: "expected a file",
+          });
+        }
+      }
+
       yield* lima.assertIsolated(vmName);
       const destination =
         guestDirectory === "~"

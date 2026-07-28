@@ -7,6 +7,10 @@ it.effect("copies multiple host files into a guest directory", () =>
   Effect.gen(function* cpTest() {
     const harness = makeCliHarness({
       limaOutputs: [{ stderr: "", stdout: "protected" }],
+      mountPathTypes: {
+        "./package.json": "File",
+        "./src/index.ts": "File",
+      },
     });
 
     yield* harness.run([
@@ -78,6 +82,7 @@ it.effect("defaults the guest destination to the guest home", () =>
         { stderr: "", stdout: "/home/test.guest" },
         { stderr: "", stdout: "writable" },
       ],
+      mountPathTypes: { "./package.json": "File" },
     });
 
     yield* harness.run(["cp", "dev", "./package.json"]);
@@ -105,5 +110,32 @@ it.effect("defaults the guest destination to the guest home", () =>
         args: ["copy", "./package.json", "dev:/home/test.guest/"],
       },
     ]);
+  })
+);
+
+it.effect("rejects every invalid source before copying any files", () =>
+  Effect.gen(function* invalidSourcesTest() {
+    for (const [source, type, reason] of [
+      ["/git", undefined, "file does not exist"],
+      ["./src", "Directory", "expected a file"],
+    ] as const) {
+      const harness = makeCliHarness({
+        mountPathTypes: {
+          "./package.json": "File",
+          [source]: type,
+        },
+      });
+
+      const error = yield* Effect.flip(
+        harness.run(["cp", "dev", "./package.json", source])
+      );
+
+      expect(error).toMatchObject({
+        _tag: "InvalidCopySourceError",
+        path: source,
+        reason,
+      });
+      expect(harness.calls).toEqual([]);
+    }
   })
 );
