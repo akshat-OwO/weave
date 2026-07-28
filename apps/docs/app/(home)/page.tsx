@@ -55,7 +55,7 @@ export default function HomePage() {
       <section className="bg-fd-secondary/30 border-t">
         <div className="mx-auto grid w-full max-w-6xl gap-4 px-6 py-12 md:grid-cols-3">
           <Feature
-            description="Host-directory mounts are disabled so guest commands stay inside the VM."
+            description="Host-directory mounts are disabled by default, with opt-in access to selected paths."
             icon={<ShieldCheck className="size-5" />}
             title="Isolated by default"
           />

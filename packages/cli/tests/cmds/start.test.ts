@@ -5,59 +5,52 @@ import { describe } from "vitest";
 import { makeCliHarness } from "../helpers/cli";
 
 describe("start", () => {
-  it.effect(
-    "starts a stopped VM without changing its configuration or disk",
-    () =>
-      Effect.gen(function* stoppedVmTest() {
-        const harness = makeCliHarness({
-          existingVm: true,
-          limaOutputs: [{ stderr: "", stdout: "null\n" }],
-          processOutputs: ["Stopped"],
-        });
+  it.effect("starts a stopped VM without changing its virtual disk", () =>
+    Effect.gen(function* stoppedVmTest() {
+      const harness = makeCliHarness({
+        existingVm: true,
+        processOutputs: ["Stopped"],
+      });
 
-        yield* harness.run(["start", "dev", "--ttl", "1h"]);
+      yield* harness.run(["start", "dev", "--ttl", "1h"]);
 
-        expect(harness.calls).toEqual([
-          {
-            args: ["list", "dev", "--format={{json .Config.Mounts}}"],
-            captured: true,
+      expect(harness.calls).toEqual([
+        {
+          acceptableExitCodes: undefined,
+          args: ["start", "--tty=false", "--mount-none", "dev"],
+          progress: {
+            failureMessage: "Failed to start dev",
+            initialMessage: "Starting dev…",
           },
-          {
-            acceptableExitCodes: undefined,
-            args: ["start", "--tty=false", "--mount-none", "dev"],
-            progress: {
-              failureMessage: "Failed to start dev",
-              initialMessage: "Starting dev…",
-            },
-          },
-          {
-            acceptableExitCodes: undefined,
-            args: [
-              "shell",
-              "dev",
-              "--",
-              "sudo",
-              "systemd-run",
-              "--quiet",
-              "--unit=weave-ttl",
-              "--on-active=3600s",
-              "--timer-property=AccuracySec=1s",
-              "--collect",
-              "systemctl",
-              "poweroff",
-            ],
-            progress: undefined,
-          },
-        ]);
-        expect(harness.stdout).toEqual(["✔ Started dev in 0s (TTL: 1h)"]);
-        expect(harness.stderr).toEqual([]);
-        expect(harness.fileWrites).toEqual([
-          {
-            contents: '{"expiresAt":3600000}',
-            path: "/test/weave/lima-home/dev/.weave-ttl.json",
-          },
-        ]);
-      })
+        },
+        {
+          acceptableExitCodes: undefined,
+          args: [
+            "shell",
+            "dev",
+            "--",
+            "sudo",
+            "systemd-run",
+            "--quiet",
+            "--unit=weave-ttl",
+            "--on-active=3600s",
+            "--timer-property=AccuracySec=1s",
+            "--collect",
+            "systemctl",
+            "poweroff",
+          ],
+          progress: undefined,
+        },
+      ]);
+      expect(harness.stdout).toEqual(["✔ Started dev in 0s (TTL: 1h)"]);
+      expect(harness.stderr).toEqual([]);
+      expect(harness.fileWrites).toEqual([
+        {
+          contents: '{"expiresAt":3600000}',
+          path: "/test/weave/lima-home/dev/.weave-ttl.json",
+        },
+      ]);
+    })
   );
 
   it.effect("reports a missing VM without trying to start it", () =>
@@ -102,37 +95,46 @@ describe("start", () => {
     })
   );
 
-  it.effect("rejects a stopped VM with externally configured host mounts", () =>
+  it.effect("starts a stopped VM with multiple selected mounts", () =>
     Effect.gen(function* mountedVmTest() {
       const harness = makeCliHarness({
         existingVm: true,
-        limaOutputs: [
-          {
-            stderr: "",
-            stdout: '[{"location":"/Users/example","writable":true}]\n',
-          },
-        ],
+        mountPathTypes: {
+          "./config": "Directory",
+          "./src": "Directory",
+        },
         processOutputs: ["Stopped"],
       });
-      const error = yield* Effect.flip(harness.run(["start", "dev"]));
+
+      yield* harness.run(["start", "dev", "--mount", "./src", "./config:w"]);
+
+      expect(harness.calls[0]?.args).toEqual([
+        "start",
+        "--tty=false",
+        "--mount-only=./src",
+        "--mount-only=./config:w",
+        "dev",
+      ]);
+      expect(harness.fileWrites).toHaveLength(1);
+      expect(harness.stdout).toEqual(["✔ Started dev in 0s (TTL: 10m)"]);
+      expect(harness.stderr).toEqual([]);
+    })
+  );
+
+  it.effect("rejects mount paths without the mount flag", () =>
+    Effect.gen(function* mountFlagRequiredTest() {
+      const harness = makeCliHarness({ existingVm: true });
+      const error = yield* Effect.flip(
+        harness.run(["start", "dev", "./package.json"])
+      );
 
       expect(error).toMatchObject({
-        _tag: "UnsafeVmMountsError",
-        name: "dev",
+        _tag: "InvalidMountArgumentsError",
+        mountEnabled: false,
+        paths: ["./package.json"],
       });
-      expect(error).toHaveProperty(
-        "message",
-        'VM "dev" has host-directory mounts configured. Run "weave create dev" to remove the mounts and start it safely.'
-      );
-      expect(harness.calls).toEqual([
-        {
-          args: ["list", "dev", "--format={{json .Config.Mounts}}"],
-          captured: true,
-        },
-      ]);
-      expect(harness.fileWrites).toEqual([]);
-      expect(harness.stdout).toEqual([]);
-      expect(harness.stderr).toEqual([]);
+      expect(harness.calls).toEqual([]);
+      expect(harness.processCalls).toEqual([]);
     })
   );
 
@@ -192,10 +194,9 @@ describe("start", () => {
       const help = harness.stdout.join("\n");
 
       expect(help).toContain("weave start [flags] <name>");
+      expect(help).toContain("--mount");
       expect(help).toContain("--ttl");
-      expect(help).toContain(
-        "Start a stopped VM without changing its configuration or disk"
-      );
+      expect(help).toContain("Start a stopped VM with selected host mounts");
       expect(harness.stderr).toEqual([]);
     })
   );

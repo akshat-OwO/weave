@@ -2,12 +2,12 @@
 
 Weave is a small CLI for creating disposable, sandboxed Linux virtual machines. It wraps [Lima](https://lima-vm.io/) with secure defaults, automatic expiry, and a focused command set.
 
-Each VM starts with host-directory mounts disabled, so commands run inside the guest instead of against files on the host. Weave bundles its own Lima 2.2.0 runtime and keeps its VM state separate from any system Lima installation.
+Each VM starts with host-directory mounts disabled by default, so commands run inside the guest instead of against files on the host unless selected paths are explicitly mounted. Weave bundles its own Lima 2.2.0 runtime and keeps its VM state separate from any system Lima installation.
 
 ## Features
 
 - Disposable VMs with a configurable time to live (TTL)
-- No host directories mounted into guests
+- No host paths mounted by default, with opt-in selective mounts
 - Built-in Node.js and Python templates
 - Support for custom Lima YAML templates
 - Interactive access and one-off command execution
@@ -66,7 +66,7 @@ Customize its CPU count, integer memory in GiB, and TTL:
 weave create dev --cpus 4 --memory 8 --ttl 1h
 ```
 
-TTL values are a positive integer followed by `s`, `m`, `h`, or `d`. When the TTL expires, the guest shuts down but is not deleted. Restart it without changing its configuration or disk:
+TTL values are a positive integer followed by `s`, `m`, `h`, or `d`. When the TTL expires, the guest shuts down but is not deleted. Restart it without changing its virtual disk:
 
 ```sh
 weave start dev
@@ -100,8 +100,8 @@ A template can only be supplied when creating a new VM, not when restarting an e
 
 | Command | Description |
 | --- | --- |
-| `weave create <name> [--cpus <count>] [--memory <GiB>] [--ttl <duration>] [--template <name-or-path>]` | Create a new VM or restart a stopped one |
-| `weave start <name> [--ttl <duration>]` | Start a stopped VM without changing its configuration or disk |
+| `weave create <name> [--cpus <count>] [--memory <GiB>] [--ttl <duration>] [--template <name-or-path>] [--mount <directory>...]` | Create a new VM or restart a stopped one |
+| `weave start <name> [--ttl <duration>] [--mount <directory>...]` | Start a stopped VM with selected host mounts |
 | `weave ls` | List VMs, their status, and remaining TTL (`list` is an alias) |
 | `weave ssh <name>` | Open an interactive shell in a running VM |
 | `weave shell <name> "<command>"` | Run a command in a running VM |
@@ -116,7 +116,7 @@ Run `weave <command> --help` for command-specific examples and options.
 
 On macOS and Linux, Weave stores its bundled runtime, templates, and VM state under `~/weave`. On Windows, it uses `%APPDATA%\weave`.
 
-Weave passes `--mount-none` when it creates or starts a VM. `weave start` first verifies that the persisted Lima configuration has no host-directory mounts and refuses to start an externally modified VM until `weave create <name>` safely removes them. CPU, memory, and disk configuration remain unchanged. VMs retain their own virtual disk when stopped and continue to have network access. Use `weave kill <name>` when the disk and its data are no longer needed.
+Weave passes `--mount-none` when `create` or `start` is invoked without a `--mount` flag. Pass one or more existing directories after `--mount` to expose only those host directories; append `:w` for writable access. Each invocation replaces the previous mount set, while CPU, memory, and disk configuration remain unchanged unless explicitly updated. VMs retain their own virtual disk when stopped and continue to have network access. Use `weave kill <name>` when the disk and its data are no longer needed.
 
 `weave uninstall` discovers and stops every running VM in Weave's dedicated Lima state before removing the CLI. It retains the bundled runtime, configuration, VM disks, and guest user data. If VM discovery, shutdown, or binary removal fails, it reports the recovery action and does not silently delete persistent data. Remove the Weave data directory manually only after confirming that none of its VMs or data are needed.
 

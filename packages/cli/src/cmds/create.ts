@@ -12,8 +12,15 @@ import {
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
+import {
+  limaMountArguments,
+  mount,
+  mountPaths,
+  validateMountDirectories,
+} from "../lib/vm-mounts";
 import { resolveVmTemplate } from "../lib/vm-template";
 import { scheduleVmTtl } from "../lib/vm-ttl";
+import { InvalidMountArgumentsError } from "../schemas/errors/invalid-mount-arguments.schema";
 import { QemuNotFoundError } from "../schemas/errors/qemu-not-found.schema";
 import { TemplateOnExistingVmError } from "../schemas/errors/template-on-existing-vm.schema";
 import { VmAlreadyExistsError } from "../schemas/errors/vm-already-exists.schema";
@@ -149,11 +156,13 @@ const name = Argument.string("name").pipe(
 
 export const create = Command.make(
   "create",
-  { cpus, memory, name, template, ttl },
+  { cpus, memory, mount, name, paths: mountPaths, template, ttl },
   ({
     cpus: cpuCount,
     memory: memorySize,
+    mount: mountFlags,
     name: vmName,
+    paths: remainingMountPaths,
     template: vmTemplate,
     ttl: vmTtl,
   }) =>
@@ -164,6 +173,16 @@ export const create = Command.make(
       const processSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const userConfig = yield* UserConfig;
       const exists = yield* fs.exists(path.join(userConfig.lima.home, vmName));
+      const mountEnabled = mountFlags[0] === true;
+      if (mountEnabled === (remainingMountPaths.length === 0)) {
+        return yield* new InvalidMountArgumentsError({
+          mountEnabled,
+          paths: remainingMountPaths,
+        });
+      }
+      const mountArguments = limaMountArguments(
+        yield* validateMountDirectories(remainingMountPaths)
+      );
 
       if (exists) {
         if (Option.isSome(vmTemplate)) {
@@ -208,7 +227,7 @@ export const create = Command.make(
           [
             "edit",
             "--tty=false",
-            "--mount-none",
+            ...mountArguments,
             ...cpuArguments,
             ...memoryArguments,
             vmName,
@@ -245,7 +264,7 @@ export const create = Command.make(
             `--name=${vmName}`,
             `--cpus=${newVmCpuCount}`,
             `--memory=${newVmMemorySize}`,
-            "--mount-none",
+            ...mountArguments,
             ...platformCreateArguments,
             ...nestedArguments,
             ...templateArguments,
@@ -290,6 +309,10 @@ export const create = Command.make(
     {
       command: "weave create dev --template ./templates/custom.yaml",
       description: "Create a VM from a custom Lima YAML template",
+    },
+    {
+      command: "weave create dev --mount ./src ./config ./tmp:w",
+      description: "Create a VM with selected host directories mounted",
     },
   ])
 );
