@@ -1,5 +1,15 @@
 # @weave/cli
 
+## 0.0.4
+
+### Patch Changes
+
+- [#21](https://github.com/akshat-OwO/weave/pull/21) [`6bf1e9c`](https://github.com/akshat-OwO/weave/commit/6bf1e9c5284e3745e4d5ff08d9aa02eeacf1e872) Thanks [@akshat-OwO](https://github.com/akshat-OwO)! - Speed up repeat VM creation with three-day cached bases and a `--fresh` bypass, add distro-neutral package and container-tooling progress, and keep Lima logs contained when `shell` or `ssh` starts a stopped VM.
+
+- [#18](https://github.com/akshat-OwO/weave/pull/18) [`70ccc6a`](https://github.com/akshat-OwO/weave/commit/70ccc6a6270a61c060d4cae2c962e570066d56f8) Thanks [@akshat-OwO](https://github.com/akshat-OwO)! - Add opt-in directory mounts to `create` and `start`, with read-only access by default, an optional `:w` suffix for writable mounts, and no host mounts when the flag is omitted.
+
+- [#20](https://github.com/akshat-OwO/weave/pull/20) [`8705fc3`](https://github.com/akshat-OwO/weave/commit/8705fc341f8671f5570802ef4f55a92d2f9e4487) Thanks [@akshat-OwO](https://github.com/akshat-OwO)! - Add `weave cp` for copying host files into a VM without writable host mounts, with direct transfers to writable destinations and elevated staging for protected guest paths.
+
 ## 0.0.3
 
 ### Patch Changes
