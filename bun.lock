@@ -40,7 +40,7 @@
     },
     "packages/cli": {
       "name": "@weave/cli",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@effect/platform-bun": "catalog:effect",
         "effect": "catalog:effect",
