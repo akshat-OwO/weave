@@ -7,9 +7,9 @@ import pythonTemplateAsset from "../../templates/python.yaml" with { type: "file
 import { InvalidVmTemplateError } from "../schemas/errors/invalid-vm-template.schema";
 
 const PREDEFINED_TEMPLATE_NAMES = ["node", "python"] as const;
-type PredefinedTemplateName = (typeof PREDEFINED_TEMPLATE_NAMES)[number];
+export type PredefinedTemplateName = (typeof PREDEFINED_TEMPLATE_NAMES)[number];
 
-const isPredefinedTemplateName = (
+export const isPredefinedTemplateName = (
   template: string
 ): template is PredefinedTemplateName =>
   PREDEFINED_TEMPLATE_NAMES.some((name) => name === template);
@@ -18,6 +18,28 @@ const predefinedTemplateAssets: Record<PredefinedTemplateName, string> = {
   node: nodeTemplateAsset,
   python: pythonTemplateAsset,
 };
+
+const readPredefinedTemplate = Effect.fn(
+  "weave/services/vmTemplate/readPredefinedTemplate"
+)(function* readPredefinedTemplateHandler(template: PredefinedTemplateName) {
+  return yield* Effect.tryPromise({
+    catch: () =>
+      new InvalidVmTemplateError({
+        reason: "the embedded template could not be read",
+        template,
+      }),
+    try: () => Bun.file(predefinedTemplateAssets[template]).text(),
+  });
+});
+
+export const predefinedVmTemplateFingerprint = Effect.fn(
+  "weave/services/vmTemplate/predefinedVmTemplateFingerprint"
+)(function* predefinedVmTemplateFingerprintHandler(
+  template: PredefinedTemplateName
+) {
+  const contents = yield* readPredefinedTemplate(template);
+  return new Bun.CryptoHasher("sha256").update(contents).digest("hex");
+});
 
 const materializePredefinedTemplate = Effect.fn(
   "weave/services/vmTemplate/materializePredefinedTemplate"
@@ -28,14 +50,7 @@ const materializePredefinedTemplate = Effect.fn(
   const fs = yield* FileSystem.FileSystem;
   const templatesPath = path.join(configPath, "templates");
   const destinationPath = path.join(templatesPath, `${template}.yaml`);
-  const contents = yield* Effect.tryPromise({
-    catch: () =>
-      new InvalidVmTemplateError({
-        reason: "the embedded template could not be read",
-        template,
-      }),
-    try: () => Bun.file(predefinedTemplateAssets[template]).text(),
-  });
+  const contents = yield* readPredefinedTemplate(template);
 
   yield* fs.makeDirectory(templatesPath, { recursive: true });
   yield* fs.writeFileString(destinationPath, contents);

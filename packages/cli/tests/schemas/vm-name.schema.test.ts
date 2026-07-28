@@ -18,4 +18,10 @@ describe("VmName", () => {
       expect(Schema.decodeUnknownOption(VmName)(name)).toEqual(Option.none());
     }
   });
+
+  it("allows names that share the internal base prefix", () => {
+    expect(Schema.decodeUnknownOption(VmName)("wvbase-user")).toEqual(
+      Option.some("wvbase-user")
+    );
+  });
 });

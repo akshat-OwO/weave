@@ -8,10 +8,14 @@ description: Complete reference for the Weave command-line interface.
 Create a new VM or restart a stopped VM:
 
 ```sh
-weave create <name> [--cpus <count>] [--memory <GiB>] [--ttl <duration>] [--template <name-or-path>] [--mount <directory>...]
+weave create <name> [--cpus <count>] [--memory <GiB>] [--ttl <duration>] [--template <name-or-path>] [--fresh] [--mount <directory>...]
 ```
 
-The default TTL is 10 minutes. A template can only be supplied when creating a new VM, not when restarting an existing one. Pass one or more existing directories after `--mount` to expose them in the guest. Mounts are read-only by default; append `:w` to a directory to make it writable. With no `--mount` flag, the VM has no host mounts.
+The default TTL is 10 minutes. A template and `--fresh` only affect newly created VMs, not restarted VMs. Pass one or more existing directories after `--mount` to expose them in the guest. Mounts are read-only by default; append `:w` to a directory to make it writable. With no `--mount` flag, the VM has no host mounts.
+
+Weave keeps compatible bases for the default, Node.js, and Python environments for three days. Subsequent creates clone the base instead of provisioning the same environment again. Pass `--fresh` to bypass the base and provision the new VM from scratch. This does not delete or replace an existing cached base. Custom Lima YAML templates are always provisioned from scratch.
+
+During cold provisioning, Weave reports VM image, package-manager, and container-tooling progress. Interactive terminals also show elapsed time; redirected and CI output prints each changed stage as a separate line.
 
 For backward compatibility, `create` continues to restart stopped VMs and can update their CPU, memory, or mount configuration.
 

@@ -12,13 +12,19 @@ import {
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
+import { createVmFromBase } from "../lib/create-vm-from-base";
+import { makeVmBaseCacheKey } from "../lib/vm-base-cache";
 import {
   limaMountArguments,
   mount,
   mountPaths,
   validateMountDirectories,
 } from "../lib/vm-mounts";
-import { resolveVmTemplate } from "../lib/vm-template";
+import {
+  isPredefinedTemplateName,
+  predefinedVmTemplateFingerprint,
+  resolveVmTemplate,
+} from "../lib/vm-template";
 import { scheduleVmTtl } from "../lib/vm-ttl";
 import { InvalidMountArgumentsError } from "../schemas/errors/invalid-mount-arguments.schema";
 import { QemuNotFoundError } from "../schemas/errors/qemu-not-found.schema";
@@ -149,16 +155,53 @@ const template = Flag.string("template").pipe(
   )
 );
 
+const fresh = Flag.boolean("fresh").pipe(
+  Flag.withDescription(
+    "Skip the cached base and provision a new VM from scratch"
+  )
+);
+
 const name = Argument.string("name").pipe(
   Argument.withSchema(VmName),
   Argument.withDescription("Unique name for the VM")
 );
 
+const resolveTemplate = Effect.fn("weave/cmds/create/resolveTemplate")(
+  function* resolveTemplateHandler(
+    vmTemplate: Option.Option<string>,
+    configPath: string
+  ) {
+    if (Option.isNone(vmTemplate)) {
+      return {
+        arguments: [],
+        cache: {
+          fingerprint: "lima-default",
+          name: "default",
+        },
+      };
+    }
+
+    const templatePath = yield* resolveVmTemplate(vmTemplate.value, configPath);
+    if (!isPredefinedTemplateName(vmTemplate.value)) {
+      return { arguments: [templatePath] };
+    }
+
+    return {
+      arguments: [templatePath],
+      cache: {
+        fingerprint: yield* predefinedVmTemplateFingerprint(vmTemplate.value),
+        name: vmTemplate.value,
+      },
+    };
+  }
+);
+
 export const create = Command.make(
   "create",
-  { cpus, memory, mount, name, paths: mountPaths, template, ttl },
+  { cpus, fresh, memory, mount, name, paths: mountPaths, template, ttl },
   ({
     cpus: cpuCount,
+    fresh: shouldCreateFresh,
     memory: memorySize,
     mount: mountFlags,
     name: vmName,
@@ -239,7 +282,7 @@ export const create = Command.make(
             },
           }
         );
-        yield* lima.run(["start", "--tty=false", vmName], {
+        yield* lima.run(["start", "--tty=false", "--progress", vmName], {
           progress: {
             failureMessage: "Failed to start virtual machine",
             initialMessage: "Starting virtual machine…",
@@ -253,29 +296,50 @@ export const create = Command.make(
           ? memorySize.value
           : DEFAULT_MEMORY_SIZE_GIB;
         const nestedArguments = yield* nestedVirtualizationArguments;
-        const templateArguments = Option.isSome(vmTemplate)
-          ? [yield* resolveVmTemplate(vmTemplate.value, userConfig.configPath)]
-          : [];
-        yield* ensureWindowsQemuAvailable;
-        yield* lima.run(
-          [
-            "start",
-            "--tty=false",
-            `--name=${vmName}`,
-            `--cpus=${newVmCpuCount}`,
-            `--memory=${newVmMemorySize}`,
-            ...mountArguments,
-            ...platformCreateArguments,
-            ...nestedArguments,
-            ...templateArguments,
-          ],
-          {
-            progress: {
-              failureMessage: "Failed to start virtual machine",
-              initialMessage: "Starting virtual machine…",
-            },
-          }
+        const resolvedTemplate = yield* resolveTemplate(
+          vmTemplate,
+          userConfig.configPath
         );
+        yield* ensureWindowsQemuAvailable;
+        if (resolvedTemplate.cache === undefined || shouldCreateFresh) {
+          yield* lima.run(
+            [
+              "start",
+              "--tty=false",
+              "--progress",
+              `--name=${vmName}`,
+              `--cpus=${newVmCpuCount}`,
+              `--memory=${newVmMemorySize}`,
+              ...mountArguments,
+              ...platformCreateArguments,
+              ...nestedArguments,
+              ...resolvedTemplate.arguments,
+            ],
+            {
+              progress: {
+                failureMessage: "Failed to start virtual machine",
+                initialMessage: "Starting virtual machine…",
+              },
+            }
+          );
+        } else {
+          const cacheKey = makeVmBaseCacheKey(
+            resolvedTemplate.cache.name,
+            resolvedTemplate.cache.fingerprint,
+            [...platformCreateArguments, ...nestedArguments]
+          );
+          yield* createVmFromBase({
+            cacheKey,
+            configPath: userConfig.configPath,
+            cpuCount: newVmCpuCount,
+            limaHome: userConfig.lima.home,
+            memorySize: newVmMemorySize,
+            mountArguments,
+            templateArguments: resolvedTemplate.arguments,
+            vmArguments: [...platformCreateArguments, ...nestedArguments],
+            vmName,
+          });
+        }
       }
 
       yield* scheduleVmTtl(userConfig.lima.home, vmName, vmTtl);
@@ -305,6 +369,10 @@ export const create = Command.make(
     {
       command: "weave create dev --template node",
       description: "Create a VM with Node.js installed through nvm",
+    },
+    {
+      command: "weave create dev --fresh",
+      description: "Create a VM from scratch without using the cached base",
     },
     {
       command: "weave create dev --template ./templates/custom.yaml",

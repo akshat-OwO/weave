@@ -119,7 +119,15 @@ test(
       Effect.succeed(vmName),
       (name) =>
         Effect.gen(function* ttlIntegrationTest() {
-          yield* runWeave(["create", name, "--cpus=1", `--ttl=${ttlSeconds}s`]);
+          const creation = yield* runWeave([
+            "create",
+            name,
+            "--cpus=1",
+            `--ttl=${ttlSeconds}s`,
+          ]);
+          expect(creation.stdout).toContain("Cloning cached environment…");
+          const tooling = yield* runWeave(["shell", name, "nerdctl --version"]);
+          expect(tooling.stdout).toMatch(/^nerdctl version \S+/mu);
           yield* Effect.sleep(runningCheckDelay);
           expect(yield* getVmStatus(name)).toBe("Running");
           expect(yield* getVmRow(name)).toMatch(/\s\d+s\s+\S+$/u);

@@ -1,7 +1,11 @@
+import path from "node:path";
+
 import { expect, it } from "@effect/vitest";
 import { Effect } from "effect";
+import { TestClock } from "effect/testing";
 import { describe } from "vitest";
 
+import { VM_BASE_PREFIX } from "../../src/lib/vm-base-cache";
 import { makeCliHarness } from "../helpers/cli";
 
 const supportedNestedVirtualizationOutputs =
@@ -18,24 +22,45 @@ describe("create", () => {
 
       yield* harness.run(["create", "dev"]);
 
-      expect(harness.calls).toHaveLength(2);
+      expect(harness.calls).toHaveLength(5);
+      const baseName = harness.calls[0]?.args
+        .find((argument) => argument.startsWith("--name="))
+        ?.slice("--name=".length);
+      expect(baseName?.startsWith(VM_BASE_PREFIX)).toBe(true);
       expect(harness.calls[0]?.args).toEqual(
         expect.arrayContaining([
           "start",
           "--tty=false",
-          "--name=dev",
+          "--progress",
           "--memory=2",
           "--mount-none",
         ])
       );
       expect(harness.calls[0]?.progress).toEqual({
-        failureMessage: "Failed to start virtual machine",
-        initialMessage: "Starting virtual machine…",
+        failureMessage: "Failed to prepare cached environment",
+        initialMessage: "Preparing cached environment…",
       });
       expect(
         harness.calls[0]?.args.some((arg) => arg.startsWith("--cpus="))
       ).toBe(true);
-      expect(harness.calls[1]?.args).toEqual([
+      expect(harness.calls[1]?.args).toEqual(["stop", "--tty=false", baseName]);
+      expect(harness.calls[2]?.args).toEqual(
+        expect.arrayContaining([
+          "clone",
+          "--tty=false",
+          "--memory=2",
+          "--mount-none",
+          baseName,
+          "dev",
+        ])
+      );
+      expect(harness.calls[3]?.args).toEqual([
+        "start",
+        "--tty=false",
+        "--progress",
+        "dev",
+      ]);
+      expect(harness.calls[4]?.args).toEqual([
         "shell",
         "dev",
         "--",
@@ -51,12 +76,10 @@ describe("create", () => {
       ]);
       expect(harness.stdout).toEqual(["✔ Created dev in 0s (TTL: 10m)"]);
       expect(harness.stderr).toEqual([]);
-      expect(harness.fileWrites).toEqual([
-        {
-          contents: '{"expiresAt":600000}',
-          path: "/test/weave/lima-home/dev/.weave-ttl.json",
-        },
-      ]);
+      expect(harness.fileWrites).toContainEqual({
+        contents: '{"expiresAt":600000}',
+        path: "/test/weave/lima-home/dev/.weave-ttl.json",
+      });
     })
   );
 
@@ -86,19 +109,185 @@ describe("create", () => {
         "./config",
       ]);
 
+      const baseName = harness.calls[0]?.args
+        .find((argument) => argument.startsWith("--name="))
+        ?.slice("--name=".length);
+      expect(baseName?.startsWith(VM_BASE_PREFIX)).toBe(true);
       expect(harness.calls[0]?.args).toEqual(
         expect.arrayContaining([
           "--cpus=4",
-          "--memory=6",
-          "--name=dev",
-          "--mount-only=./src",
-          "--mount-only=./config",
+          "--memory=2",
+          "--mount-none",
           "/test/weave/templates/node.yaml",
         ])
       );
-      expect(harness.calls[1]?.args).toContain("--on-active=7200s");
+      expect(harness.calls[2]?.args).toEqual(
+        expect.arrayContaining([
+          "clone",
+          "--cpus=4",
+          "--memory=6",
+          "--mount-only=./src",
+          "--mount-only=./config",
+          baseName,
+          "dev",
+        ])
+      );
+      expect(harness.calls[4]?.args).toContain("--on-active=7200s");
       expect(harness.stdout).toEqual(["✔ Created dev in 0s (TTL: 2h)"]);
       expect(harness.stderr).toEqual([]);
+    })
+  );
+
+  it.effect("reuses a compatible base until its three-day expiry", () =>
+    Effect.gen(function* reuseBaseTest() {
+      const harness = makeCliHarness({
+        processOutputs: [
+          ...supportedNestedVirtualizationOutputs,
+          ...supportedNestedVirtualizationOutputs,
+        ],
+      });
+
+      yield* harness.run(["create", "first"]);
+      const baseName = harness.calls[0]?.args
+        .find((argument) => argument.startsWith("--name="))
+        ?.slice("--name=".length);
+      const firstCallCount = harness.calls.length;
+
+      yield* TestClock.adjust("2 days");
+      yield* harness.run(["create", "second"]);
+
+      const reuseCalls = harness.calls.slice(firstCallCount);
+      expect(reuseCalls).toHaveLength(3);
+      expect(reuseCalls[0]?.args).toEqual(
+        expect.arrayContaining(["clone", baseName, "second"])
+      );
+      expect(
+        reuseCalls.some(({ args }) =>
+          args.some((argument) => argument.startsWith("--name="))
+        )
+      ).toBe(false);
+    })
+  );
+
+  it.effect("rebuilds and replaces a base after three days", () =>
+    Effect.gen(function* staleBaseTest() {
+      const harness = makeCliHarness({
+        processOutputs: [
+          ...supportedNestedVirtualizationOutputs,
+          ...supportedNestedVirtualizationOutputs,
+        ],
+      });
+
+      yield* harness.run(["create", "first"]);
+      const oldBaseName = harness.calls[0]?.args
+        .find((argument) => argument.startsWith("--name="))
+        ?.slice("--name=".length);
+      const firstCallCount = harness.calls.length;
+
+      yield* TestClock.adjust("3 days");
+      yield* harness.run(["create", "second"]);
+
+      const refreshCalls = harness.calls.slice(firstCallCount);
+      const newBaseName = refreshCalls[0]?.args
+        .find((argument) => argument.startsWith("--name="))
+        ?.slice("--name=".length);
+      expect(newBaseName?.startsWith(VM_BASE_PREFIX)).toBe(true);
+      expect(newBaseName).not.toBe(oldBaseName);
+      expect(refreshCalls[2]?.args).toEqual([
+        "delete",
+        "--force",
+        "--tty=false",
+        oldBaseName,
+      ]);
+      expect(refreshCalls[3]?.args).toEqual(
+        expect.arrayContaining(["clone", newBaseName, "second"])
+      );
+      const metadataWrites = harness.fileWrites.filter(({ path: filePath }) =>
+        filePath.includes("/cache/vm-bases/")
+      );
+      expect(JSON.parse(metadataWrites.at(-1)?.contents ?? "{}")).toMatchObject(
+        {
+          retiredNames: [],
+        }
+      );
+    })
+  );
+
+  it.effect("retains failed base cleanups as internal metadata", () =>
+    Effect.gen(function* failedBaseCleanupTest() {
+      const cleanupFailures: string[] = [];
+      const harness = makeCliHarness({
+        limaRunFailures: cleanupFailures,
+        processOutputs: [
+          ...supportedNestedVirtualizationOutputs,
+          ...supportedNestedVirtualizationOutputs,
+        ],
+      });
+
+      yield* harness.run(["create", "first"]);
+      const oldBaseName = harness.calls[0]?.args
+        .find((argument) => argument.startsWith("--name="))
+        ?.slice("--name=".length);
+      expect(oldBaseName).toBeDefined();
+      cleanupFailures.push(oldBaseName ?? "");
+
+      yield* TestClock.adjust("3 days");
+      yield* harness.run(["create", "second"]);
+
+      const metadataWrites = harness.fileWrites.filter(({ path: filePath }) =>
+        filePath.includes("/cache/vm-bases/")
+      );
+      expect(JSON.parse(metadataWrites.at(-1)?.contents ?? "{}")).toMatchObject(
+        {
+          retiredNames: [oldBaseName],
+        }
+      );
+    })
+  );
+
+  it.effect("uses cold creation for custom templates", () =>
+    Effect.gen(function* customTemplateTest() {
+      const customTemplate = path.resolve("./custom.yaml");
+      const harness = makeCliHarness({
+        mountPathTypes: { [customTemplate]: "File" },
+        processOutputs: supportedNestedVirtualizationOutputs,
+      });
+
+      yield* harness.run(["create", "dev", "--template", customTemplate]);
+
+      expect(harness.calls).toHaveLength(2);
+      expect(harness.calls[0]?.args).toEqual(
+        expect.arrayContaining(["start", "--name=dev", customTemplate])
+      );
+      expect(harness.calls[0]?.args).not.toContain("clone");
+    })
+  );
+
+  it.effect("bypasses the base cache when fresh creation is requested", () =>
+    Effect.gen(function* freshCreateTest() {
+      const harness = makeCliHarness({
+        processOutputs: supportedNestedVirtualizationOutputs,
+      });
+
+      yield* harness.run(["create", "dev", "--template", "node", "--fresh"]);
+
+      expect(harness.calls).toHaveLength(2);
+      expect(harness.calls[0]?.args).toEqual(
+        expect.arrayContaining([
+          "start",
+          "--tty=false",
+          "--progress",
+          "--name=dev",
+          "--memory=2",
+          "/test/weave/templates/node.yaml",
+        ])
+      );
+      expect(harness.calls[0]?.args).not.toContain("clone");
+      expect(
+        harness.calls[0]?.args.some((argument) =>
+          argument.startsWith(`--name=${VM_BASE_PREFIX}`)
+        )
+      ).toBe(false);
     })
   );
 
@@ -256,7 +445,7 @@ describe("create", () => {
         },
         {
           acceptableExitCodes: undefined,
-          args: ["start", "--tty=false", "dev"],
+          args: ["start", "--tty=false", "--progress", "dev"],
           progress: {
             failureMessage: "Failed to start virtual machine",
             initialMessage: "Starting virtual machine…",

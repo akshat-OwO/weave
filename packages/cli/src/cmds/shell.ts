@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { Argument, Command } from "effect/unstable/cli";
 
+import { ensureVmRunning } from "../lib/ensure-vm-running";
 import { VmName } from "../schemas/vm-name.schema";
 import { LimaRuntime } from "../services/lima-runtime";
 
@@ -19,6 +20,10 @@ export const shell = Command.make(
     Effect.gen(function* shellHandler() {
       const lima = yield* LimaRuntime;
       yield* lima.assertIsolated(name);
+      const isRunning = yield* ensureVmRunning(name);
+      if (!isRunning) {
+        return;
+      }
       yield* lima.run([
         "shell",
         name,

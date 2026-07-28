@@ -33,7 +33,7 @@ interface RuntimePaths {
   readonly runtimeState: string;
 }
 
-const LIMA_VERSION = "2.2.0";
+export const LIMA_VERSION = "2.2.0";
 
 const installRuntime = Effect.fn(
   "weave/services/userConfig/helper/installRuntime"

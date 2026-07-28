@@ -29,7 +29,28 @@ weave create custom-dev --template ./templates/custom.yaml
 
 Relative paths are resolved from the directory where you run Weave.
 
+## Cached bases
+
+Weave prepares reusable bases for the default environment and the built-in `node` and `python` templates. The first create provisions and stops an internal base; later creates clone it, which avoids repeating package and container-tooling installation.
+
+A base remains fresh for three days. Weave creates a new base when that window expires or when its template, Weave version, Lima version, architecture, virtualization backend, or relevant VM configuration changes. Internal bases do not appear in `weave ls`.
+
+Bypass the cache for one new VM with `--fresh`:
+
+```sh
+weave create node-dev --template node --fresh
+```
+
+`--fresh` provisions that VM from scratch without deleting or updating the cached base. Custom Lima YAML files are not cached and always follow the same cold-provisioning path.
+
+<Callout type="info" title="Cold creates show progress">
+  Weave reports image downloads, package index and dependency downloads, and
+  container-tooling setup while Lima provisions a base or fresh VM. Progress
+  recognizes output from APT, DNF/YUM, APK, and Pacman-based guests.
+</Callout>
+
 <Callout title="New VMs only">
-  Choose a template when you first create a VM. Weave rejects template changes
-  when restarting an existing VM.
+  Choose a template or `--fresh` when you first create a VM. Weave rejects
+  template changes when restarting an existing VM and ignores cache selection
+  for restarts.
 </Callout>

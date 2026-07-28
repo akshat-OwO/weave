@@ -2,6 +2,7 @@ import path from "node:path";
 
 import type { PlatformError } from "effect";
 import {
+  Clock,
   Console,
   Context,
   Effect,
@@ -17,8 +18,12 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   decodeLimaLogLine,
+  formatDownloadBytes,
   formatLimaLog,
+  formatProgressElapsed,
   limaActionableDiagnosticLine,
+  limaPackageDownloadBytes,
+  limaPackageDownloadPhase,
   limaProgressLine,
 } from "../lib/lima-progress";
 import { UnsafeVmBackendError } from "../schemas/errors/unsafe-vm-backend.schema";
@@ -189,9 +194,28 @@ export const LimaRuntimeLive = Layer.effect(
               stdout: "pipe",
             }
           );
+          const isInteractive =
+            process.stdout.isTTY === true &&
+            Bun.env.CI !== "true" &&
+            Bun.env.TERM !== "dumb";
+          const startedAt = yield* Clock.currentTimeMillis;
           const message = yield* Ref.make(options.progress.initialMessage);
+          const packageDownloadBytes = yield* Ref.make(0);
+          const packageDownloadPhase = yield* Ref.make<"indexes" | "packages">(
+            "indexes"
+          );
           const diagnostics = yield* Ref.make<readonly string[]>([]);
           const actionableDiagnostics = yield* Ref.make<readonly string[]>([]);
+          const publishMessage = (nextMessage: string) =>
+            Effect.gen(function* publishMessageHandler() {
+              const previousMessage = yield* Ref.getAndSet(
+                message,
+                nextMessage
+              );
+              if (!isInteractive && previousMessage !== nextMessage) {
+                yield* Console.log(nextMessage);
+              }
+            });
           const appendDiagnostic = (line: string) =>
             Ref.update(diagnostics, (lines) => {
               const next = lines.slice(-(maximumDiagnosticLines - 1));
@@ -204,9 +228,38 @@ export const LimaRuntimeLive = Layer.effect(
               next.push(line);
               return next;
             });
+          const updateProgress = (line: string) =>
+            Effect.gen(function* updateProgressHandler() {
+              const phase = limaPackageDownloadPhase(line);
+              if (Option.isSome(phase)) {
+                yield* Ref.set(packageDownloadPhase, phase.value);
+                yield* Ref.set(packageDownloadBytes, 0);
+              }
+
+              const downloadedBytes = limaPackageDownloadBytes(line);
+              if (Option.isSome(downloadedBytes)) {
+                const totalBytes = yield* Ref.updateAndGet(
+                  packageDownloadBytes,
+                  (total) => total + downloadedBytes.value
+                );
+                const currentPhase = yield* Ref.get(packageDownloadPhase);
+                const label =
+                  currentPhase === "indexes"
+                    ? "Downloading package indexes"
+                    : "Downloading VM packages";
+                yield* publishMessage(
+                  `${label}… ${formatDownloadBytes(totalBytes)} received`
+                );
+                return;
+              }
+
+              const progressMessage = limaProgressLine(line);
+              if (Option.isSome(progressMessage)) {
+                yield* publishMessage(progressMessage.value);
+              }
+            });
           const consumeLine = (line: string) => {
             const decoded = decodeLimaLogLine(line);
-            const progressMessage = limaProgressLine(line);
             const actionableDiagnostic = limaActionableDiagnosticLine(line);
 
             if (Option.isNone(decoded)) {
@@ -216,9 +269,7 @@ export const LimaRuntimeLive = Layer.effect(
                   Option.isSome(actionableDiagnostic)
                     ? appendActionableDiagnostic(actionableDiagnostic.value)
                     : Effect.void,
-                  Option.isSome(progressMessage)
-                    ? Ref.set(message, progressMessage.value)
-                    : Effect.void,
+                  updateProgress(line),
                 ],
                 { discard: true }
               );
@@ -230,9 +281,7 @@ export const LimaRuntimeLive = Layer.effect(
                 Option.isSome(actionableDiagnostic)
                   ? appendActionableDiagnostic(actionableDiagnostic.value)
                   : Effect.void,
-                Option.isSome(progressMessage)
-                  ? Ref.set(message, progressMessage.value)
-                  : Effect.void,
+                updateProgress(line),
               ],
               { discard: true }
             );
@@ -249,10 +298,6 @@ export const LimaRuntimeLive = Layer.effect(
             yield* Fiber.join(outputFiber);
             return exitCode;
           });
-          const isInteractive =
-            process.stdout.isTTY === true &&
-            Bun.env.CI !== "true" &&
-            Bun.env.TERM !== "dumb";
           let exitCode: number;
 
           if (isInteractive) {
@@ -267,8 +312,14 @@ export const LimaRuntimeLive = Layer.effect(
                     (index) => (index + 1) % spinnerFrames.length
                   );
                   const currentMessage = yield* Ref.get(message);
+                  const currentTime = yield* Clock.currentTimeMillis;
+                  const elapsedMillis = currentTime - startedAt;
+                  const elapsed =
+                    elapsedMillis >= 1000
+                      ? ` · ${formatProgressElapsed(elapsedMillis)} elapsed`
+                      : "";
                   yield* display(
-                    `${clearLine}${spinnerFrames[frameIndex]} ${currentMessage}`
+                    `${clearLine}${spinnerFrames[frameIndex]} ${currentMessage}${elapsed}`
                   );
                 });
 
