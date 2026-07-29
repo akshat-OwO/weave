@@ -1,11 +1,12 @@
 import { expect, it } from "@effect/vitest";
-import { Cause, Effect } from "effect";
+import { Cause, Effect, Runtime } from "effect";
 import { TestConsole } from "effect/testing";
 
 import {
   CliLogger,
   formatCause,
   makeCliLogger,
+  shouldLogCause,
 } from "../../src/services/cli-logger";
 
 it("formats failures without stack traces by default", () => {
@@ -23,6 +24,16 @@ it("includes stack traces and file paths in debug mode", () => {
 
   expect(output).toContain("Error: Command exited with code 1");
   expect(output).toContain("/workspace/src/index.ts:10:2");
+});
+
+it("does not log interruptions or causes already reported by Effect", () => {
+  const alreadyReported = Object.assign(new Error("already reported"), {
+    [Runtime.errorReported]: false,
+  });
+
+  expect(shouldLogCause(Cause.interrupt(123))).toBe(false);
+  expect(shouldLogCause(Cause.fail(alreadyReported))).toBe(false);
+  expect(shouldLogCause(Cause.fail(new Error("report me")))).toBe(true);
 });
 
 it.effect(

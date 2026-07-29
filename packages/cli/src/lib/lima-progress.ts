@@ -20,6 +20,7 @@ const actionableLogLevels = new Set([
   "warn",
   "warning",
 ]);
+const failureLogLevels = new Set(["erro", "error", "fatal", "panic"]);
 const plainDiagnosticPattern =
   /^(?<level>WARN(?:ING)?|ERRO(?:R)?|FATAL|PANIC)\[\d+\]\s*(?<message>.*)$/iu;
 const logfmtLevelPattern = /\blevel=(?<level>"(?:\\.|[^"\\])*"|[^\s]+)/u;
@@ -77,7 +78,12 @@ const messageFromLine = (line: string): string => {
 const decodeLogfmtValue = (value: string): Option.Option<string> =>
   value.startsWith('"') ? decodeLogfmtQuotedValue(value) : Option.some(value);
 
-const logfmtDiagnosticMessage = (line: string): Option.Option<string> => {
+interface FailureDiagnostic {
+  readonly level: string;
+  readonly message: string;
+}
+
+const logfmtDiagnostic = (line: string): Option.Option<FailureDiagnostic> => {
   const levelValue = logfmtLevelPattern.exec(line)?.groups?.level;
   const messageValue = logfmtMessagePattern.exec(line)?.groups?.message;
 
@@ -96,11 +102,14 @@ const logfmtDiagnosticMessage = (line: string): Option.Option<string> => {
     return Option.none();
   }
 
-  return message;
+  return Option.some({
+    level: level.value,
+    message: message.value,
+  });
 };
 
 export const limaFailureMessage = (stderr: string): Option.Option<string> => {
-  const messages: string[] = [];
+  const diagnostics: FailureDiagnostic[] = [];
 
   for (const line of stderr.split(/\r?\n/u)) {
     const decoded = decodeLimaLogLine(line);
@@ -108,35 +117,56 @@ export const limaFailureMessage = (stderr: string): Option.Option<string> => {
       Option.isSome(decoded) &&
       actionableLogLevels.has(decoded.value.level.toLowerCase())
     ) {
-      messages.push(decoded.value.msg);
+      diagnostics.push({
+        level: decoded.value.level,
+        message: decoded.value.msg,
+      });
       continue;
     }
 
-    const logfmtMessage = logfmtDiagnosticMessage(line);
-    if (Option.isSome(logfmtMessage)) {
-      messages.push(logfmtMessage.value);
+    const logfmt = logfmtDiagnostic(line);
+    if (Option.isSome(logfmt)) {
+      diagnostics.push(logfmt.value);
       continue;
     }
 
     const plain = plainDiagnosticPattern.exec(line);
-    if (plain?.groups?.message !== undefined) {
-      messages.push(plain.groups.message);
+    if (
+      plain?.groups?.level !== undefined &&
+      plain.groups.message !== undefined
+    ) {
+      diagnostics.push({
+        level: plain.groups.level,
+        message: plain.groups.message,
+      });
     }
   }
 
-  const message =
-    messages.find((candidate) =>
-      preferredFailureMessagePatterns.some((pattern) => pattern.test(candidate))
-    ) ??
-    messages.find(
-      (candidate) =>
-        !ignoredFailureMessagePatterns.some((pattern) =>
-          pattern.test(candidate)
-        )
-    ) ??
-    messages[0];
+  const preferred = diagnostics.find((diagnostic) =>
+    preferredFailureMessagePatterns.some((pattern) =>
+      pattern.test(diagnostic.message)
+    )
+  );
+  if (preferred !== undefined) {
+    return Option.some(preferred.message);
+  }
 
-  return message === undefined ? Option.none() : Option.some(message);
+  const relevant = diagnostics.filter(
+    (diagnostic) =>
+      !ignoredFailureMessagePatterns.some((pattern) =>
+        pattern.test(diagnostic.message)
+      )
+  );
+  const diagnostic =
+    relevant.find((candidate) =>
+      failureLogLevels.has(candidate.level.toLowerCase())
+    ) ??
+    relevant[0] ??
+    diagnostics[0];
+
+  return diagnostic === undefined
+    ? Option.none()
+    : Option.some(diagnostic.message);
 };
 
 export type PackageDownloadPhase = "indexes" | "packages";

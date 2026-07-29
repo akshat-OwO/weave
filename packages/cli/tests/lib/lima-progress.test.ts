@@ -191,6 +191,17 @@ it("extracts failure messages from structured and classic Lima logs", () => {
   ).toBe("Configuration is deprecated");
 });
 
+it("prefers error and fatal messages over incidental warnings", () => {
+  const stderr = [
+    'time="now" level=warning msg="Configuration is deprecated"',
+    'time="now" level=fatal msg="Failed to open VM disk"',
+  ].join("\n");
+
+  expect(Option.getOrUndefined(limaFailureMessage(stderr))).toBe(
+    "Failed to open VM disk"
+  );
+});
+
 it("maps both plain downloader output and structured logs", () => {
   expect(
     Option.getOrUndefined(

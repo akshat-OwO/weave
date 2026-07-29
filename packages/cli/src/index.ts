@@ -8,7 +8,11 @@ import {
   CliLifecycleLive,
   CliLifecyclePlatformLive,
 } from "./services/cli-lifecycle";
-import { CliLogger, CliLoggerLive } from "./services/cli-logger";
+import {
+  CliLogger,
+  CliLoggerLive,
+  shouldLogCause,
+} from "./services/cli-logger";
 import { LimaRuntimeLive } from "./services/lima-runtime";
 import { UserConfigLive } from "./services/user-config";
 
@@ -29,10 +33,12 @@ const program = Effect.gen(function* programHandler() {
   yield* Command.run(weave, { version: cliPackage.version });
 }).pipe(
   Effect.tapCause((cause) =>
-    Effect.gen(function* logFailure() {
-      const logger = yield* CliLogger;
-      yield* logger.logCause(cause);
-    })
+    shouldLogCause(cause)
+      ? Effect.gen(function* logFailure() {
+          const logger = yield* CliLogger;
+          yield* logger.logCause(cause);
+        })
+      : Effect.void
   )
 );
 

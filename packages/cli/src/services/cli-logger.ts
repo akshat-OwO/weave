@@ -1,4 +1,4 @@
-import { Cause, Console, Context, Effect, Layer } from "effect";
+import { Cause, Console, Context, Effect, Layer, Runtime } from "effect";
 
 export interface CliLoggerService {
   readonly logCause: (cause: Cause.Cause<unknown>) => Effect.Effect<void>;
@@ -21,6 +21,10 @@ export const formatCause = (
     .map((error) => `✖ ${error.message}`)
     .join("\n");
 };
+
+export const shouldLogCause = (cause: Cause.Cause<unknown>): boolean =>
+  !Cause.hasInterruptsOnly(cause) &&
+  Runtime.getErrorReported(Cause.squash(cause));
 
 export const makeCliLogger = (debug: boolean): CliLoggerService =>
   CliLogger.of({
