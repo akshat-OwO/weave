@@ -65,6 +65,23 @@ it("discovers only base names recorded by valid cache metadata", async () => {
   expect(names).toEqual(new Set(["wvbase-managed", "wvbase-retired"]));
 });
 
+it("removes temporary metadata directories after writing", async () => {
+  const entries = await Effect.runPromise(
+    Effect.gen(function* metadataCleanupTest() {
+      const fs = yield* FileSystem.FileSystem;
+      const configPath = yield* fs.makeTempDirectoryScoped();
+      yield* writeVmBaseMetadata(configPath, {
+        builtAt: 1000,
+        cacheKey: "cache-key",
+        name: "wvbase-managed",
+      });
+      return yield* fs.readDirectory(`${configPath}/cache/vm-bases`);
+    }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer))
+  );
+
+  expect(entries).toEqual(["cache-key.json"]);
+});
+
 it("serializes cache work for the same key", async () => {
   const maximumActive = await Effect.runPromise(
     Effect.gen(function* cacheLockTest() {

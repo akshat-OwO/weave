@@ -243,7 +243,9 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
     makeTempFile: (makeOptions) =>
       Effect.sync(() => {
         temporaryFileIndex += 1;
-        const temporaryPath = `${makeOptions?.directory ?? "/tmp"}/${makeOptions?.prefix ?? ""}${temporaryFileIndex}${makeOptions?.suffix ?? ""}`;
+        const temporaryDirectory = `${makeOptions?.directory ?? "/tmp"}/${makeOptions?.prefix ?? ""}${temporaryFileIndex}`;
+        const temporaryPath = `${temporaryDirectory}/${temporaryFileIndex}${makeOptions?.suffix ?? ""}`;
+        directories.add(temporaryDirectory);
         storedFiles.set(temporaryPath, "");
         return temporaryPath;
       }),
