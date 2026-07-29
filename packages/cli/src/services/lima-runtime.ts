@@ -34,6 +34,7 @@ interface RunOptions {
   readonly progress?: {
     readonly failureMessage: string;
     readonly initialMessage: string;
+    readonly startedAt?: number;
   };
 }
 
@@ -198,7 +199,8 @@ export const LimaRuntimeLive = Layer.effect(
             process.stdout.isTTY === true &&
             Bun.env.CI !== "true" &&
             Bun.env.TERM !== "dumb";
-          const startedAt = yield* Clock.currentTimeMillis;
+          const startedAt =
+            options.progress.startedAt ?? (yield* Clock.currentTimeMillis);
           const message = yield* Ref.make(options.progress.initialMessage);
           const packageDownloadBytes = yield* Ref.make(0);
           const packageDownloadPhase = yield* Ref.make<"indexes" | "packages">(

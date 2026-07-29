@@ -335,6 +335,7 @@ export const create = Command.make(
             limaHome: userConfig.lima.home,
             memorySize: newVmMemorySize,
             mountArguments,
+            progressStartedAt: startedAt,
             templateArguments: resolvedTemplate.arguments,
             vmArguments: [...platformCreateArguments, ...nestedArguments],
             vmName,

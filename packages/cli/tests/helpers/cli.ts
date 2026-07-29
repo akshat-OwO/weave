@@ -33,6 +33,7 @@ export interface LimaCall {
   readonly progress?: {
     readonly failureMessage: string;
     readonly initialMessage: string;
+    readonly startedAt?: number;
   };
 }
 

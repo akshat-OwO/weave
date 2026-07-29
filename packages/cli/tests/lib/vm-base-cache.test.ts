@@ -133,6 +133,7 @@ it("keeps the base lock until each clone finishes", async () => {
         limaHome,
         memorySize: 2,
         mountArguments: ["--mount-none"],
+        progressStartedAt: yield* Clock.currentTimeMillis,
         templateArguments: [],
         vmArguments: [],
       } as const;
