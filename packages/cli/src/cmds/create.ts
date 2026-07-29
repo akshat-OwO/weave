@@ -79,8 +79,14 @@ const ensureWindowsQemuAvailable = Effect.gen(
       const executable = `qemu-system-${qemuArchitecture}`;
       const environmentName = `QEMU_SYSTEM_${qemuArchitecture.toUpperCase()}`;
       const configuredExecutable = Bun.env[environmentName]?.trim();
+      const configuredExecutableExists =
+        configuredExecutable !== undefined &&
+        (Bun.which(configuredExecutable) !== null ||
+          (yield* Effect.promise(() =>
+            Bun.file(configuredExecutable).exists()
+          )));
 
-      if (configuredExecutable || Bun.which(executable)) {
+      if (configuredExecutableExists || Bun.which(executable)) {
         return;
       }
 

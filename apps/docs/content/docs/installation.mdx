@@ -5,7 +5,9 @@ description: Install the correct Weave binary for your machine.
 
 ## Install Weave
 
-Run the installer:
+### macOS and Linux
+
+Run the POSIX installer:
 
 ```sh
 curl -fsSL https://weave.4kshat.dev/install.sh | sh
@@ -23,10 +25,6 @@ Verify the installation:
 weave --help
 ```
 
-<Callout title="Windows">
-  Run the installer from Git Bash, MSYS2, or another POSIX-compatible shell.
-</Callout>
-
 <Callout title="Custom install directory">
   Set `WEAVE_INSTALL_DIR` to install somewhere other than `~/.local/bin`:
 
@@ -36,6 +34,30 @@ curl -fsSL https://weave.4kshat.dev/install.sh | WEAVE_INSTALL_DIR="$HOME/bin" s
 
 </Callout>
 
+### Windows
+
+Run the native installer from PowerShell:
+
+```powershell
+irm https://weave.4kshat.dev/install.ps1 | iex
+```
+
+The installer downloads and verifies `weave.exe`, installs it under `%LOCALAPPDATA%\Weave\bin`, and adds that directory to your user `PATH`. It also discovers an existing QEMU installation or installs QEMU through WinGet, verifies the required system emulator, and persists its path for Weave. Open a new PowerShell, Command Prompt, or Windows Terminal session after installation.
+
+<Callout type="info" title="Windows prerequisites are configured automatically">
+  Windows Package Manager (`winget`) is required only when QEMU is not already
+  installed. WinGet may show an elevation prompt while installing QEMU. It is
+  provided by Microsoft's App Installer on supported Windows 10 and Windows 11
+  systems.
+</Callout>
+
+To choose a different installation directory, set a Windows path before running the installer:
+
+```powershell
+$env:WEAVE_INSTALL_DIR = "$HOME\bin"
+irm https://weave.4kshat.dev/install.ps1 | iex
+```
+
 ## Host requirements
 
 Weave uses Lima's native virtualization backend:
@@ -44,9 +66,9 @@ Weave uses Lima's native virtualization backend:
 | --- | --- | --- |
 | macOS | Virtualization.framework (`vz`) | Nested virtualization requires Apple M3 or later and macOS 15 or later. |
 | Linux | QEMU | Install the QEMU packages provided by your distribution. |
-| Windows | QEMU | The matching `qemu-system-*` executable must be available on `PATH`. |
+| Windows | QEMU | The PowerShell installer installs and configures QEMU automatically through WinGet when needed. |
 
-On Windows, you can point Weave to QEMU explicitly with `QEMU_SYSTEM_X86_64` or `QEMU_SYSTEM_AARCH64`.
+Advanced Windows installations can point Weave to QEMU explicitly with `QEMU_SYSTEM_X86_64` or `QEMU_SYSTEM_AARCH64`.
 
 ## Install a specific release
 
@@ -54,6 +76,13 @@ Set `WEAVE_VERSION` to a GitHub release tag:
 
 ```sh
 curl -fsSL https://weave.4kshat.dev/install.sh | WEAVE_VERSION=v0.1.0 sh
+```
+
+On Windows:
+
+```powershell
+$env:WEAVE_VERSION = "v0.1.0"
+irm https://weave.4kshat.dev/install.ps1 | iex
 ```
 
 The installer will not replace an existing installation with an older release.

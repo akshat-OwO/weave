@@ -21,7 +21,7 @@ The host must also support the virtualization backend used by Lima:
 
 - macOS uses Virtualization.framework (`vz`).
 - Linux uses QEMU.
-- Windows uses QEMU and requires the matching `qemu-system-*` executable on `PATH`. It can instead be set with `QEMU_SYSTEM_X86_64` or `QEMU_SYSTEM_AARCH64`.
+- Windows uses QEMU. The PowerShell installer discovers or installs QEMU through WinGet and configures the matching `QEMU_SYSTEM_X86_64` or `QEMU_SYSTEM_AARCH64` path automatically.
 
 On Apple silicon, nested virtualization is enabled when running on an Apple M3 or later with macOS 15 or later.
 
@@ -51,6 +51,14 @@ bun run --cwd packages/cli build
 The build produces executables for all supported platform and architecture combinations.
 
 For fresh installations, the release installer places `weave` under the user-owned `~/.local/bin` directory by default, so installation, upgrades, and uninstallation do not require administrator access.
+
+Windows users install Weave and its QEMU dependency from PowerShell:
+
+```powershell
+irm https://weave.4kshat.dev/install.ps1 | iex
+```
+
+The installer places `weave.exe` under `%LOCALAPPDATA%\Weave\bin`, adds it to the user `PATH`, and uses WinGet to install QEMU when it is not already available.
 
 ## Usage
 
