@@ -1,5 +1,17 @@
 # @weave/cli
 
+## 0.0.5
+
+### Patch Changes
+
+- [#22](https://github.com/akshat-OwO/weave/pull/22) [`47c7886`](https://github.com/akshat-OwO/weave/commit/47c7886fed7bb7f47c1a9e22b574108c65bf7ae5) Thanks [@akshat-OwO](https://github.com/akshat-OwO)! - Keep elapsed time continuous across cached environment creation phases.
+
+- [#26](https://github.com/akshat-OwO/weave/pull/26) [`7238491`](https://github.com/akshat-OwO/weave/commit/7238491c3dc9a5604e3524cf9333a965f826ea50) Thanks [@akshat-OwO](https://github.com/akshat-OwO)! - Show concise actionable CLI failures by default and preserve full diagnostics behind `DEBUG=1`.
+
+- [#25](https://github.com/akshat-OwO/weave/pull/25) [`5f5a715`](https://github.com/akshat-OwO/weave/commit/5f5a715c9a79b3e57bee6a9dd016e772cf89900c) Thanks [@akshat-OwO](https://github.com/akshat-OwO)! - Add a native PowerShell installer that installs Weave and automatically configures QEMU through WinGet on Windows.
+
+- [#24](https://github.com/akshat-OwO/weave/pull/24) [`aa29de3`](https://github.com/akshat-OwO/weave/commit/aa29de3307c364cab31917a8247ef5b610cd38e3) Thanks [@akshat-OwO](https://github.com/akshat-OwO)! - Remove temporary directories after atomically writing VM base cache metadata.
+
 ## 0.0.4
 
 ### Patch Changes
