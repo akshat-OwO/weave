@@ -16,6 +16,7 @@ interface CreateVmFromBaseOptions {
   readonly limaHome: string;
   readonly memorySize: number;
   readonly mountArguments: readonly string[];
+  readonly progressStartedAt: number;
   readonly templateArguments: readonly string[];
   readonly vmArguments: readonly string[];
   readonly vmName: string;
@@ -26,26 +27,31 @@ interface PrepareVmBaseOptions {
   readonly configPath: string;
   readonly cpuCount: number;
   readonly limaHome: string;
+  readonly progressStartedAt: number;
   readonly templateArguments: readonly string[];
   readonly vmArguments: readonly string[];
 }
 
-const deleteVm = (name: string) =>
+const deleteVm = (name: string, progressStartedAt: number) =>
   Effect.gen(function* deleteVmHandler() {
     const lima = yield* LimaRuntime;
     yield* lima.run(["delete", "--force", "--tty=false", name], {
       progress: {
         failureMessage: `Failed to clean up ${name}`,
         initialMessage: `Cleaning up ${name}…`,
+        startedAt: progressStartedAt,
       },
     });
   });
 
-const ignoreDeleteVm = (name: string) =>
-  deleteVm(name).pipe(Effect.ignoreCause);
+const ignoreDeleteVm = (name: string, progressStartedAt: number) =>
+  deleteVm(name, progressStartedAt).pipe(Effect.ignoreCause);
 
-const tryDeleteVm = (name: string) =>
-  deleteVm(name).pipe(Effect.exit, Effect.map(Exit.isSuccess));
+const tryDeleteVm = (name: string, progressStartedAt: number) =>
+  deleteVm(name, progressStartedAt).pipe(
+    Effect.exit,
+    Effect.map(Exit.isSuccess)
+  );
 
 const prepareVmBase = Effect.fn("weave/lib/prepareVmBase")(
   function* prepareVmBaseHandler(options: PrepareVmBaseOptions) {
@@ -93,6 +99,7 @@ const prepareVmBase = Effect.fn("weave/lib/prepareVmBase")(
           progress: {
             failureMessage: "Failed to prepare cached environment",
             initialMessage: "Preparing cached environment…",
+            startedAt: options.progressStartedAt,
           },
         }
       );
@@ -100,16 +107,19 @@ const prepareVmBase = Effect.fn("weave/lib/prepareVmBase")(
         progress: {
           failureMessage: "Failed to finalize cached environment",
           initialMessage: "Finalizing cached environment…",
+          startedAt: options.progressStartedAt,
         },
       });
       yield* writeVmBaseMetadata(options.configPath, metadata);
-    }).pipe(Effect.onError(() => ignoreDeleteVm(baseName)));
+    }).pipe(
+      Effect.onError(() => ignoreDeleteVm(baseName, options.progressStartedAt))
+    );
 
     yield* buildBase;
 
     const failedRetiredNames: string[] = [];
     for (const retiredName of retiredNames) {
-      if (!(yield* tryDeleteVm(retiredName))) {
+      if (!(yield* tryDeleteVm(retiredName, options.progressStartedAt))) {
         failedRetiredNames.push(retiredName);
       }
     }
@@ -147,6 +157,7 @@ export const createVmFromBase = Effect.fn("weave/lib/createVmFromBase")(
               progress: {
                 failureMessage: "Failed to clone cached environment",
                 initialMessage: "Cloning cached environment…",
+                startedAt: options.progressStartedAt,
               },
             }
           );
@@ -156,9 +167,14 @@ export const createVmFromBase = Effect.fn("weave/lib/createVmFromBase")(
         progress: {
           failureMessage: "Failed to start virtual machine",
           initialMessage: "Starting virtual machine…",
+          startedAt: options.progressStartedAt,
         },
       });
-    }).pipe(Effect.onError(() => ignoreDeleteVm(options.vmName)));
+    }).pipe(
+      Effect.onError(() =>
+        ignoreDeleteVm(options.vmName, options.progressStartedAt)
+      )
+    );
 
     yield* cloneAndStart;
   }

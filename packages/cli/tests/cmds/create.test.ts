@@ -39,7 +39,11 @@ describe("create", () => {
       expect(harness.calls[0]?.progress).toEqual({
         failureMessage: "Failed to prepare cached environment",
         initialMessage: "Preparing cached environment…",
+        startedAt: 0,
       });
+      expect(
+        harness.calls.slice(0, 4).map(({ progress }) => progress?.startedAt)
+      ).toEqual([0, 0, 0, 0]);
       expect(
         harness.calls[0]?.args.some((arg) => arg.startsWith("--cpus="))
       ).toBe(true);
@@ -199,6 +203,10 @@ describe("create", () => {
         "--tty=false",
         oldBaseName,
       ]);
+      const progressStartedAt = refreshCalls[0]?.progress?.startedAt;
+      expect(
+        refreshCalls.slice(0, 5).map(({ progress }) => progress?.startedAt)
+      ).toEqual(Array.from({ length: 5 }, () => progressStartedAt));
       expect(refreshCalls[3]?.args).toEqual(
         expect.arrayContaining(["clone", newBaseName, "second"])
       );
