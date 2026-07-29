@@ -22,11 +22,13 @@ import {
   formatLimaLog,
   formatProgressElapsed,
   limaActionableDiagnosticLine,
+  limaFailureMessage,
   limaPackageDownloadBytes,
   limaPackageDownloadPhase,
   limaProgressLine,
 } from "../lib/lima-progress";
 import { UnsafeVmBackendError } from "../schemas/errors/unsafe-vm-backend.schema";
+import { CliLogger } from "./cli-logger";
 import { UserConfig } from "./user-config";
 
 interface RunOptions {
@@ -80,6 +82,7 @@ export const LimaRuntime = Context.Service<{
 export const LimaRuntimeLive = Layer.effect(
   LimaRuntime,
   Effect.gen(function* handler() {
+    const logger = yield* CliLogger;
     const userConfig = yield* UserConfig;
     const processSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const terminal = yield* Terminal.Terminal;
@@ -151,9 +154,13 @@ export const LimaRuntimeLive = Layer.effect(
 
             if (exitCode !== 0) {
               if (stderr.length > 0) {
-                yield* Console.error(stderr.trimEnd());
+                yield* logger.logDebug(stderr.trimEnd());
               }
-              return yield* Effect.die(`Command exited with code ${exitCode}`);
+              const message = Option.getOrElse(
+                limaFailureMessage(stderr),
+                () => `Command exited with code ${exitCode}`
+              );
+              return yield* Effect.die(message);
             }
 
             return { stderr, stdout };
@@ -167,21 +174,53 @@ export const LimaRuntimeLive = Layer.effect(
           if (options?.progress === undefined) {
             const command = ChildProcess.make(
               userConfig.lima.executable,
-              args,
+              ["--log-format=json", ...args],
               {
                 env: environment,
                 extendEnv: true,
-                stderr: "inherit",
+                stderr: "pipe",
                 stdin: "inherit",
                 stdout: "inherit",
               }
             );
-            const exitCode = yield* processSpawner.exitCode(command);
+            return yield* Effect.scoped(
+              Effect.gen(function* directRunHandler() {
+                const diagnostics = yield* Ref.make<readonly string[]>([]);
+                const handle = yield* processSpawner.spawn(command);
+                const stderrFiber = yield* handle.stderr.pipe(
+                  Stream.decodeText,
+                  Stream.splitLines,
+                  Stream.runForEach((line) => {
+                    if (Option.isNone(decodeLimaLogLine(line))) {
+                      return Console.error(line);
+                    }
 
-            if (!acceptableExitCodes.includes(exitCode)) {
-              return yield* Effect.die(`Command exited with code ${exitCode}`);
-            }
-            return;
+                    return Effect.all(
+                      [
+                        Ref.update(diagnostics, (lines) => [
+                          ...lines.slice(-(maximumDiagnosticLines - 1)),
+                          line,
+                        ]),
+                        logger.logDebug(line),
+                      ],
+                      { discard: true }
+                    );
+                  }),
+                  Effect.forkScoped
+                );
+                const exitCode = yield* handle.exitCode;
+                yield* Fiber.join(stderrFiber);
+
+                if (!acceptableExitCodes.includes(exitCode)) {
+                  const output = yield* Ref.get(diagnostics);
+                  const message = Option.getOrElse(
+                    limaFailureMessage(output.join("\n")),
+                    () => `Command exited with code ${exitCode}`
+                  );
+                  return yield* Effect.die(message);
+                }
+              })
+            );
           }
 
           const command = ChildProcess.make(
