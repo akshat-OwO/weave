@@ -112,7 +112,8 @@ export const writeVmBaseMetadata = Effect.fn(
     prefix: `${metadata.cacheKey}.`,
     suffix: ".tmp",
   });
-  const write = Effect.gen(function* writeVmBaseMetadataFile() {
+  const temporaryDirectory = path.dirname(temporaryPath);
+  yield* Effect.gen(function* writeVmBaseMetadataFile() {
     yield* fs.writeFileString(
       temporaryPath,
       Schema.encodeSync(VmBaseMetadataJson)(metadata)
@@ -121,10 +122,11 @@ export const writeVmBaseMetadata = Effect.fn(
       temporaryPath,
       vmBaseMetadataPath(configPath, metadata.cacheKey)
     );
-  });
-  yield* write.pipe(
-    Effect.onError(() =>
-      fs.remove(temporaryPath, { force: true }).pipe(Effect.ignore)
+  }).pipe(
+    Effect.ensuring(
+      fs
+        .remove(temporaryDirectory, { force: true, recursive: true })
+        .pipe(Effect.ignore)
     )
   );
 });
