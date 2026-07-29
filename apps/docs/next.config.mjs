@@ -7,7 +7,7 @@ const config = {
   reactStrictMode: true,
   webpack: (webpackConfig) => {
     webpackConfig.module.rules.push({
-      test: /\.sh$/u,
+      test: /\.(?:ps1|sh)$/u,
       type: "asset/source",
     });
 

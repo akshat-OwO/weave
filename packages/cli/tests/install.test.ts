@@ -6,9 +6,7 @@ import {
   mkdtemp,
   mkdir,
   readFile,
-  readlink,
   rm,
-  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -271,30 +269,9 @@ describe("install script", () => {
     expect(await pathExists(harness.downloadLogPath)).toBe(false);
   });
 
-  it("detects an existing installation on PATH with the default location", async () => {
+  it("directs Windows users to the dependency-aware PowerShell installer", async () => {
     const harness = await makeHarness();
-    const pathBinary = path.join(harness.toolsDirectory, "weave.exe");
-    await makeVersionBinary(pathBinary, "weave v1.2.3");
 
-    const result = await harness.run({
-      HOME: harness.installDirectory,
-      WEAVE_INSTALL_DIR: "",
-      WEAVE_UNAME_S: "MINGW64_NT",
-    });
-
-    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
-    expect(result.stdout).toContain(`already up to date at ${pathBinary}`);
-    expect(await pathExists(harness.downloadLogPath)).toBe(false);
-  });
-
-  it("preserves a symlink-managed installation discovered on PATH", async () => {
-    const harness = await makeHarness();
-    const managedBinary = path.join(harness.installDirectory, "managed-weave");
-    const pathBinary = path.join(harness.toolsDirectory, "weave.exe");
-    await makeVersionBinary(managedBinary, "weave v1.2.2");
-    await symlink(managedBinary, pathBinary);
-
-    const originalBinary = await readFile(managedBinary, "utf-8");
     const result = await harness.run({
       HOME: harness.installDirectory,
       WEAVE_INSTALL_DIR: "",
@@ -303,10 +280,11 @@ describe("install script", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain(
-      "is a symbolic link; upgrade it with the tool that manages the link"
+      "install Weave from PowerShell so Windows dependencies can be configured automatically"
     );
-    expect(await readlink(pathBinary)).toBe(managedBinary);
-    expect(await readFile(managedBinary, "utf-8")).toBe(originalBinary);
+    expect(result.stderr).toContain(
+      "irm https://weave.4kshat.dev/install.ps1 | iex"
+    );
     expect(await pathExists(harness.downloadLogPath)).toBe(false);
   });
 

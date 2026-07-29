@@ -21,7 +21,7 @@ case "$uname_s" in
     os="linux"
     ;;
   CYGWIN* | MINGW* | MSYS*)
-    os="windows"
+    fail "install Weave from PowerShell so Windows dependencies can be configured automatically: irm https://weave.4kshat.dev/install.ps1 | iex"
     ;;
   *)
     fail "unsupported operating system: $uname_s"
@@ -42,11 +42,6 @@ esac
 
 asset="weave-bun-$os-$arch"
 binary_name="weave"
-
-if [ "$os" = "windows" ]; then
-  asset="$asset.exe"
-  binary_name="weave.exe"
-fi
 
 if [ -n "${WEAVE_INSTALL_DIR:-}" ]; then
   install_dir="$WEAVE_INSTALL_DIR"
