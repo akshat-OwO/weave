@@ -22,11 +22,13 @@ import {
   formatLimaLog,
   formatProgressElapsed,
   limaActionableDiagnosticLine,
+  limaFailureMessage,
   limaPackageDownloadBytes,
   limaPackageDownloadPhase,
   limaProgressLine,
 } from "../lib/lima-progress";
 import { UnsafeVmBackendError } from "../schemas/errors/unsafe-vm-backend.schema";
+import { CliLogger } from "./cli-logger";
 import { UserConfig } from "./user-config";
 
 interface RunOptions {
@@ -80,6 +82,7 @@ export const LimaRuntime = Context.Service<{
 export const LimaRuntimeLive = Layer.effect(
   LimaRuntime,
   Effect.gen(function* handler() {
+    const logger = yield* CliLogger;
     const userConfig = yield* UserConfig;
     const processSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const terminal = yield* Terminal.Terminal;
@@ -151,9 +154,13 @@ export const LimaRuntimeLive = Layer.effect(
 
             if (exitCode !== 0) {
               if (stderr.length > 0) {
-                yield* Console.error(stderr.trimEnd());
+                yield* logger.logDebug(stderr.trimEnd());
               }
-              return yield* Effect.die(`Command exited with code ${exitCode}`);
+              const message = Option.getOrElse(
+                limaFailureMessage(stderr),
+                () => `Command exited with code ${exitCode}`
+              );
+              return yield* Effect.die(message);
             }
 
             return { stderr, stdout };

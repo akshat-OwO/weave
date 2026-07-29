@@ -7,6 +7,7 @@ import {
   formatLimaLog,
   formatProgressElapsed,
   limaActionableDiagnosticLine,
+  limaFailureMessage,
   limaPackageDownloadBytes,
   limaPackageDownloadPhase,
   limaProgressLine,
@@ -161,6 +162,33 @@ it("keeps actionable diagnostics while suppressing informational logs", () => {
       limaActionableDiagnosticLine("ERRO[0001] Failed to inspect disk")
     )
   ).toBe("ERROR Failed to inspect disk");
+});
+
+it("extracts a clean failure message from Lima logfmt output", () => {
+  const stderr = [
+    'time="2026-07-29T18:08:18+05:30" level=warning msg="failed to detect whether running under rosetta, assuming false" error="sysctl failed"',
+    'time="2026-07-29T18:08:18+05:30" level=warning msg="No instance matching dev found."',
+    'time="2026-07-29T18:08:18+05:30" level=fatal msg="unmatched instances"',
+  ].join("\n");
+
+  expect(Option.getOrUndefined(limaFailureMessage(stderr))).toBe(
+    "No instance matching dev found."
+  );
+});
+
+it("extracts failure messages from structured and classic Lima logs", () => {
+  expect(
+    Option.getOrUndefined(
+      limaFailureMessage(
+        '{"level":"error","msg":"Failed to inspect disk","time":"now"}'
+      )
+    )
+  ).toBe("Failed to inspect disk");
+  expect(
+    Option.getOrUndefined(
+      limaFailureMessage("WARN[0000] Configuration is deprecated")
+    )
+  ).toBe("Configuration is deprecated");
 });
 
 it("maps both plain downloader output and structured logs", () => {

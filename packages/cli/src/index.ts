@@ -8,10 +8,15 @@ import {
   CliLifecycleLive,
   CliLifecyclePlatformLive,
 } from "./services/cli-lifecycle";
+import { CliLogger, CliLoggerLive } from "./services/cli-logger";
 import { LimaRuntimeLive } from "./services/lima-runtime";
 import { UserConfigLive } from "./services/user-config";
 
-const DependenciesLive = Layer.merge(BunServices.layer, UserConfigLive);
+const DependenciesLive = Layer.mergeAll(
+  BunServices.layer,
+  CliLoggerLive,
+  UserConfigLive
+);
 
 const InfrastructureLive = Layer.merge(
   LimaRuntimeLive,
@@ -22,6 +27,16 @@ const AppLive = CliLifecycleLive.pipe(Layer.provideMerge(InfrastructureLive));
 
 const program = Effect.gen(function* programHandler() {
   yield* Command.run(weave, { version: cliPackage.version });
-});
+}).pipe(
+  Effect.tapCause((cause) =>
+    Effect.gen(function* logFailure() {
+      const logger = yield* CliLogger;
+      yield* logger.logCause(cause);
+    })
+  )
+);
 
-program.pipe(Effect.provide(AppLive), BunRuntime.runMain);
+program.pipe(
+  Effect.provide(AppLive),
+  BunRuntime.runMain({ disableErrorReporting: true })
+);

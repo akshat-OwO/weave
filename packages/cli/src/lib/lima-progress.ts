@@ -6,10 +6,12 @@ const LimaLog = Schema.Struct({
 });
 
 const LimaLogLine = Schema.fromJsonString(LimaLog);
+const LogfmtQuotedValue = Schema.fromJsonString(Schema.String);
 
 export type LimaLog = typeof LimaLog.Type;
 
 export const decodeLimaLogLine = Schema.decodeUnknownOption(LimaLogLine);
+const decodeLogfmtQuotedValue = Schema.decodeUnknownOption(LogfmtQuotedValue);
 
 const actionableLogLevels = new Set([
   "error",
@@ -20,6 +22,12 @@ const actionableLogLevels = new Set([
 ]);
 const plainDiagnosticPattern =
   /^(?<level>WARN(?:ING)?|ERRO(?:R)?|FATAL|PANIC)\[\d+\]\s*(?<message>.*)$/iu;
+const logfmtLevelPattern = /\blevel=(?<level>"(?:\\.|[^"\\])*"|[^\s]+)/u;
+const logfmtMessagePattern = /\bmsg=(?<message>"(?:\\.|[^"\\])*"|[^\s]+)/u;
+const preferredFailureMessagePatterns = [/^No instance matching\b/iu] as const;
+const ignoredFailureMessagePatterns = [
+  /^failed to detect whether running under rosetta\b/iu,
+] as const;
 const aptDownloadPattern =
   /^\[cloud-init\]\s+Get:\d+\s+.+\[(?<amount>\d+(?:\.\d+)?)\s*(?<unit>B|kB|MB|GB)\]\s*$/u;
 const completedPackageDownloadPattern =
@@ -64,6 +72,71 @@ const byteMultipliers: Readonly<Record<string, number>> = {
 const messageFromLine = (line: string): string => {
   const decoded = decodeLimaLogLine(line);
   return Option.isSome(decoded) ? decoded.value.msg : line;
+};
+
+const decodeLogfmtValue = (value: string): Option.Option<string> =>
+  value.startsWith('"') ? decodeLogfmtQuotedValue(value) : Option.some(value);
+
+const logfmtDiagnosticMessage = (line: string): Option.Option<string> => {
+  const levelValue = logfmtLevelPattern.exec(line)?.groups?.level;
+  const messageValue = logfmtMessagePattern.exec(line)?.groups?.message;
+
+  if (levelValue === undefined || messageValue === undefined) {
+    return Option.none();
+  }
+
+  const level = decodeLogfmtValue(levelValue);
+  const message = decodeLogfmtValue(messageValue);
+
+  if (
+    Option.isNone(level) ||
+    Option.isNone(message) ||
+    !actionableLogLevels.has(level.value.toLowerCase())
+  ) {
+    return Option.none();
+  }
+
+  return message;
+};
+
+export const limaFailureMessage = (stderr: string): Option.Option<string> => {
+  const messages: string[] = [];
+
+  for (const line of stderr.split(/\r?\n/u)) {
+    const decoded = decodeLimaLogLine(line);
+    if (
+      Option.isSome(decoded) &&
+      actionableLogLevels.has(decoded.value.level.toLowerCase())
+    ) {
+      messages.push(decoded.value.msg);
+      continue;
+    }
+
+    const logfmtMessage = logfmtDiagnosticMessage(line);
+    if (Option.isSome(logfmtMessage)) {
+      messages.push(logfmtMessage.value);
+      continue;
+    }
+
+    const plain = plainDiagnosticPattern.exec(line);
+    if (plain?.groups?.message !== undefined) {
+      messages.push(plain.groups.message);
+    }
+  }
+
+  const message =
+    messages.find((candidate) =>
+      preferredFailureMessagePatterns.some((pattern) => pattern.test(candidate))
+    ) ??
+    messages.find(
+      (candidate) =>
+        !ignoredFailureMessagePatterns.some((pattern) =>
+          pattern.test(candidate)
+        )
+    ) ??
+    messages[0];
+
+  return message === undefined ? Option.none() : Option.some(message);
 };
 
 export type PackageDownloadPhase = "indexes" | "packages";
