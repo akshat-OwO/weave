@@ -1,0 +1,4 @@
+interface:
+  display_name: "Weave"
+  short_description: "Run tasks in isolated Linux virtual machines"
+  default_prompt: "Use $weave to run this task safely in a sandboxed Linux VM."

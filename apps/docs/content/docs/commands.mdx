@@ -99,6 +99,28 @@ weave kill <name>
   to keep the virtual disk for later.
 </Callout>
 
+## `skills`
+
+Print version-matched instructions for AI agents:
+
+```sh
+weave skills list
+weave skills get core
+weave skills get create
+weave skills get copy
+weave skills get lifecycle
+weave skills get isolation
+weave skills get network
+```
+
+The repository includes a small discovery skill that can be installed with:
+
+```sh
+npx skills add https://github.com/akshat-OwO/weave
+```
+
+The installed `SKILL.md` points agents to these embedded sections so its guidance stays aligned with the installed CLI release.
+
 ## `upgrade`
 
 Upgrade the installed CLI to the newest stable release:

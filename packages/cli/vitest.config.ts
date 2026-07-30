@@ -5,7 +5,7 @@ export default defineConfig({
     {
       enforce: "pre",
       load(id) {
-        if (id.endsWith(".yaml")) {
+        if (id.endsWith(".md") || id.endsWith(".yaml")) {
           return `export default ${JSON.stringify(id)}`;
         }
       },

@@ -6,6 +6,7 @@ import { kill } from "./kill";
 import { list } from "./list";
 import { port } from "./port";
 import { shell } from "./shell";
+import { skills } from "./skills";
 import { ssh } from "./ssh";
 import { start } from "./start";
 import { stop } from "./stop";
@@ -24,6 +25,7 @@ export const weave = Command.make("weave").pipe(
     kill,
     shell,
     ssh,
+    skills,
     upgrade,
     uninstall,
   ])

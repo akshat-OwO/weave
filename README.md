@@ -128,10 +128,21 @@ A template and `--fresh` only affect newly created VMs, not restarted VMs.
 | `weave cp <name> <file>... [--o <guest-directory>]` | Copy host files into a VM (guest home by default) |
 | `weave stop <name>` | Stop a VM without deleting it |
 | `weave kill <name>` | Permanently delete a VM |
+| `weave skills get <section>` | Print version-matched instructions for AI agents |
 | `weave upgrade` | Atomically upgrade to the latest stable release |
 | `weave uninstall` | Stop managed VMs and remove only the CLI binary |
 
 Run `weave <command> --help` for command-specific examples and options.
+
+### Agent skill
+
+Install Weave's discovery stub in a supported coding agent:
+
+```sh
+npx skills add https://github.com/akshat-OwO/weave
+```
+
+The stub directs agents to `weave skills get core` and specialized sections such as `create`, `copy`, `lifecycle`, `isolation`, and `network`. Those instructions are embedded in the Weave executable so they stay aligned with the installed CLI version.
 
 ## Data and isolation
 

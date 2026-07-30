@@ -26,6 +26,7 @@ it.effect("exposes help, version, every command, and the list alias", () =>
       "kill",
       "shell",
       "ssh",
+      "skills",
       "upgrade",
       "uninstall",
     ]) {
