@@ -4,6 +4,8 @@ import { Clock, Console, Effect, FileSystem, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
+import { startVmWithNetwork } from "../lib/start-vm";
+import { withVmLock } from "../lib/vm-lock";
 import {
   limaMountArguments,
   mount,
@@ -41,85 +43,82 @@ export const start = Command.make(
     ttl,
   },
   ({ mount: mountFlags, name, paths: remainingMountPaths, ttl: vmTtl }) =>
-    Effect.gen(function* startHandler() {
-      const startedAt = yield* Clock.currentTimeMillis;
-      const fs = yield* FileSystem.FileSystem;
-      const lima = yield* LimaRuntime;
-      const processSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const userConfig = yield* UserConfig;
-      const exists = yield* fs.exists(path.join(userConfig.lima.home, name));
+    UserConfig.use((userConfig) =>
+      withVmLock(
+        userConfig.configPath,
+        name,
+        Effect.gen(function* startHandler() {
+          const startedAt = yield* Clock.currentTimeMillis;
+          const fs = yield* FileSystem.FileSystem;
+          const lima = yield* LimaRuntime;
+          const processSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const exists = yield* fs.exists(
+            path.join(userConfig.lima.home, name)
+          );
 
-      const mountEnabled = mountFlags[0] === true;
-      if (mountEnabled === (remainingMountPaths.length === 0)) {
-        return yield* new InvalidMountArgumentsError({
-          mountEnabled,
-          paths: remainingMountPaths,
-        });
-      }
+          const mountEnabled = mountFlags[0] === true;
+          if (mountEnabled === (remainingMountPaths.length === 0)) {
+            return yield* new InvalidMountArgumentsError({
+              mountEnabled,
+              paths: remainingMountPaths,
+            });
+          }
 
-      if (!exists) {
-        return yield* new VmNotFoundError({ name });
-      }
+          if (!exists) {
+            return yield* new VmNotFoundError({ name });
+          }
 
-      yield* lima.assertIsolated(name);
-      const statusCommand = ChildProcess.make(
-        userConfig.lima.executable,
-        ["list", name, "--format={{.Status}}"],
-        {
-          env: {
-            ...Bun.env,
-            LIMA_HOME: userConfig.lima.home,
-            LIMA_TEMPLATES_PATH: path.join(
-              userConfig.lima.runtime,
-              "share",
-              "lima",
-              "templates"
-            ),
-          },
-          extendEnv: true,
-        }
-      );
-      const status = yield* processSpawner.string(statusCommand).pipe(
-        Effect.map((output) => output.trim()),
-        Effect.flatMap(Schema.decodeUnknownEffect(Schema.String))
-      );
+          yield* lima.assertIsolated(name);
+          const statusCommand = ChildProcess.make(
+            userConfig.lima.executable,
+            ["list", name, "--format={{.Status}}"],
+            {
+              env: {
+                ...Bun.env,
+                LIMA_HOME: userConfig.lima.home,
+                LIMA_TEMPLATES_PATH: path.join(
+                  userConfig.lima.runtime,
+                  "share",
+                  "lima",
+                  "templates"
+                ),
+              },
+              extendEnv: true,
+            }
+          );
+          const status = yield* processSpawner.string(statusCommand).pipe(
+            Effect.map((output) => output.trim()),
+            Effect.flatMap(Schema.decodeUnknownEffect(Schema.String))
+          );
 
-      if (status === "Running") {
-        return yield* new VmAlreadyRunningError({ name });
-      }
+          if (status === "Running") {
+            return yield* new VmAlreadyRunningError({ name });
+          }
 
-      if (status !== "Stopped") {
-        return yield* new VmLifecycleStateError({ name, status });
-      }
+          if (status !== "Stopped") {
+            return yield* new VmLifecycleStateError({ name, status });
+          }
 
-      yield* lima.run(
-        [
-          "start",
-          "--tty=false",
-          "--progress",
-          ...limaMountArguments(
-            yield* validateMountDirectories(remainingMountPaths)
-          ),
-          name,
-        ],
-        {
-          progress: {
-            failureMessage: `Failed to start ${name}`,
-            initialMessage: `Starting ${name}…`,
-          },
-        }
-      );
-      yield* scheduleVmTtl(userConfig.lima.home, name, vmTtl);
+          yield* startVmWithNetwork(
+            userConfig.lima.home,
+            name,
+            limaMountArguments(
+              yield* validateMountDirectories(remainingMountPaths)
+            )
+          );
+          yield* scheduleVmTtl(userConfig.lima.home, name, vmTtl);
 
-      const finishedAt = yield* Clock.currentTimeMillis;
-      const elapsedSeconds = Math.max(
-        0,
-        Math.round((finishedAt - startedAt) / 1000)
-      );
-      yield* Console.log(
-        `✔ Started ${name} in ${elapsedSeconds}s (TTL: ${vmTtl.value})`
-      );
-    })
+          const finishedAt = yield* Clock.currentTimeMillis;
+          const elapsedSeconds = Math.max(
+            0,
+            Math.round((finishedAt - startedAt) / 1000)
+          );
+          yield* Console.log(
+            `✔ Started ${name} in ${elapsedSeconds}s (TTL: ${vmTtl.value})`
+          );
+        })
+      )
+    )
 ).pipe(
   Command.withDescription("Start a stopped VM with selected host mounts"),
   Command.withExamples([

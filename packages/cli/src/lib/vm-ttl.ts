@@ -28,10 +28,18 @@ export const writeVmTtl = Effect.fn("weave/lib/vmTtl/writeVmTtl")(
   }
 );
 
-export const scheduleVmTtl = Effect.fn("weave/lib/vmTtl/scheduleVmTtl")(
-  function* scheduleVmTtlHandler(limaHome: string, name: string, ttl: Ttl) {
+export const scheduleVmTtlAt = Effect.fn("weave/lib/vmTtl/scheduleVmTtlAt")(
+  function* scheduleVmTtlAtHandler(
+    limaHome: string,
+    name: string,
+    expiresAt: number
+  ) {
     const lima = yield* LimaRuntime;
-    const expiresAt = (yield* Clock.currentTimeMillis) + ttl.seconds * 1000;
+    const currentTimeMillis = yield* Clock.currentTimeMillis;
+    const remainingSeconds = Math.max(
+      1,
+      Math.ceil((expiresAt - currentTimeMillis) / 1000)
+    );
 
     yield* lima.run([
       "shell",
@@ -41,13 +49,21 @@ export const scheduleVmTtl = Effect.fn("weave/lib/vmTtl/scheduleVmTtl")(
       "systemd-run",
       "--quiet",
       "--unit=weave-ttl",
-      `--on-active=${ttl.seconds}s`,
+      `--on-active=${remainingSeconds}s`,
       "--timer-property=AccuracySec=1s",
       "--collect",
       "systemctl",
       "poweroff",
     ]);
     yield* writeVmTtl(limaHome, name, expiresAt);
+  }
+);
+
+export const scheduleVmTtl = Effect.fn("weave/lib/vmTtl/scheduleVmTtl")(
+  function* scheduleVmTtlHandler(limaHome: string, name: string, ttl: Ttl) {
+    const expiresAt = (yield* Clock.currentTimeMillis) + ttl.seconds * 1000;
+
+    yield* scheduleVmTtlAt(limaHome, name, expiresAt);
   }
 );
 

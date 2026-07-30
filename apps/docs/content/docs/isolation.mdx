@@ -36,7 +36,17 @@ The restarted VM receives a new TTL. Use `weave kill dev` when you want to remov
 
 ## Network access
 
-Guests retain network access even when host mounts are disabled.
+Guest application ports are denied by default. Explicitly publish a TCP port to parent localhost with a Docker-style mapping:
+
+```sh
+weave port add dev 8080:3000
+```
+
+This makes guest port `3000` available at `127.0.0.1:8080` on the parent. Add multiple mappings by running `port add` again, inspect them with `weave port ls dev`, and remove a mapping with `weave port remove dev 8080`.
+
+Port mappings persist independently of VM state. Changing them on a running VM briefly restarts it while preserving its original TTL expiry.
+
+This policy restricts inbound parent-to-guest application access. Guests retain outbound network access, including DNS and internet access, even when host mounts are disabled.
 
 ## Weave data directory
 

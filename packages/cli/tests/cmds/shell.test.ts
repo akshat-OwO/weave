@@ -2,6 +2,10 @@ import { expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { describe } from "vitest";
 
+import {
+  limaNetworkArguments,
+  vmNetworkMetadataPath,
+} from "../../src/lib/vm-network";
 import { makeCliHarness } from "../helpers/cli";
 
 describe("shell", () => {
@@ -39,8 +43,18 @@ describe("shell", () => {
 
   it.effect("renders progress before executing a command in a stopped VM", () =>
     Effect.gen(function* stoppedShellTest() {
+      const networkPath = vmNetworkMetadataPath("/test/weave/lima-home", "dev");
       const harness = makeCliHarness({
-        limaOutputs: [{ stderr: "", stdout: "Stopped\n" }],
+        fileContents: {
+          [networkPath]: JSON.stringify({
+            ports: [{ guestPort: 3000, hostPort: 8080 }],
+            version: 1,
+          }),
+        },
+        limaOutputs: [
+          { stderr: "", stdout: "Stopped\n" },
+          { stderr: "", stdout: "Stopped\n" },
+        ],
       });
 
       yield* harness.run(["shell", "dev", "true"]);
@@ -49,6 +63,23 @@ describe("shell", () => {
         {
           args: ["list", "dev", "--format={{.Status}}"],
           captured: true,
+        },
+        {
+          args: ["list", "dev", "--format={{.Status}}"],
+          captured: true,
+        },
+        {
+          acceptableExitCodes: undefined,
+          args: [
+            "edit",
+            "--tty=false",
+            ...limaNetworkArguments([{ guestPort: 3000, hostPort: 8080 }]),
+            "dev",
+          ],
+          progress: {
+            failureMessage: "Failed to update port restrictions for dev",
+            initialMessage: "Updating port restrictions for dev…",
+          },
         },
         {
           acceptableExitCodes: undefined,

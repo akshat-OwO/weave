@@ -14,12 +14,14 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { createVmFromBase } from "../lib/create-vm-from-base";
 import { makeVmBaseCacheKey } from "../lib/vm-base-cache";
+import { withVmLock } from "../lib/vm-lock";
 import {
   limaMountArguments,
   mount,
   mountPaths,
   validateMountDirectories,
 } from "../lib/vm-mounts";
+import { limaNetworkArguments, readVmNetwork } from "../lib/vm-network";
 import {
   isPredefinedTemplateName,
   predefinedVmTemplateFingerprint,
@@ -215,152 +217,165 @@ export const create = Command.make(
     template: vmTemplate,
     ttl: vmTtl,
   }) =>
-    Effect.gen(function* createHandler() {
-      const startedAt = yield* Clock.currentTimeMillis;
-      const fs = yield* FileSystem.FileSystem;
-      const lima = yield* LimaRuntime;
-      const processSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const userConfig = yield* UserConfig;
-      const exists = yield* fs.exists(path.join(userConfig.lima.home, vmName));
-      const mountEnabled = mountFlags[0] === true;
-      if (mountEnabled === (remainingMountPaths.length === 0)) {
-        return yield* new InvalidMountArgumentsError({
-          mountEnabled,
-          paths: remainingMountPaths,
-        });
-      }
-      const mountArguments = limaMountArguments(
-        yield* validateMountDirectories(remainingMountPaths)
-      );
-
-      if (exists) {
-        if (Option.isSome(vmTemplate)) {
-          return yield* new TemplateOnExistingVmError({ name: vmName });
-        }
-
-        yield* lima.assertIsolated(vmName);
-        const statusCommand = ChildProcess.make(
-          userConfig.lima.executable,
-          ["list", vmName, "--format={{.Status}}"],
-          {
-            env: {
-              ...Bun.env,
-              LIMA_HOME: userConfig.lima.home,
-              LIMA_TEMPLATES_PATH: path.join(
-                userConfig.lima.runtime,
-                "share",
-                "lima",
-                "templates"
-              ),
-            },
-            extendEnv: true,
+    UserConfig.use((userConfig) =>
+      withVmLock(
+        userConfig.configPath,
+        vmName,
+        Effect.gen(function* createHandler() {
+          const startedAt = yield* Clock.currentTimeMillis;
+          const fs = yield* FileSystem.FileSystem;
+          const lima = yield* LimaRuntime;
+          const processSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const exists = yield* fs.exists(
+            path.join(userConfig.lima.home, vmName)
+          );
+          const mountEnabled = mountFlags[0] === true;
+          if (mountEnabled === (remainingMountPaths.length === 0)) {
+            return yield* new InvalidMountArgumentsError({
+              mountEnabled,
+              paths: remainingMountPaths,
+            });
           }
-        );
-        const status = yield* processSpawner.string(statusCommand).pipe(
-          Effect.map((output) => output.trim()),
-          Effect.flatMap(Schema.decodeUnknownEffect(Schema.NonEmptyString))
-        );
+          const mountArguments = limaMountArguments(
+            yield* validateMountDirectories(remainingMountPaths)
+          );
 
-        if (status !== "Stopped") {
-          return yield* new VmAlreadyExistsError({ name: vmName });
-        }
+          if (exists) {
+            if (Option.isSome(vmTemplate)) {
+              return yield* new TemplateOnExistingVmError({ name: vmName });
+            }
 
-        const cpuArguments = Option.isSome(cpuCount)
-          ? [`--cpus=${cpuCount.value}`]
-          : [];
-        const memoryArguments = Option.isSome(memorySize)
-          ? [`--memory=${memorySize.value}`]
-          : [];
-        yield* ensureWindowsQemuAvailable;
-        yield* lima.run(
-          [
-            "edit",
-            "--tty=false",
-            ...mountArguments,
-            ...cpuArguments,
-            ...memoryArguments,
-            vmName,
-          ],
-          {
-            progress: {
-              failureMessage: "Failed to update virtual machine configuration",
-              initialMessage: "Updating virtual machine configuration…",
-            },
-          }
-        );
-        yield* lima.run(["start", "--tty=false", "--progress", vmName], {
-          progress: {
-            failureMessage: "Failed to start virtual machine",
-            initialMessage: "Starting virtual machine…",
-          },
-        });
-      } else {
-        const newVmCpuCount = Option.isSome(cpuCount)
-          ? cpuCount.value
-          : yield* defaultCpuCount;
-        const newVmMemorySize = Option.isSome(memorySize)
-          ? memorySize.value
-          : DEFAULT_MEMORY_SIZE_GIB;
-        const nestedArguments = yield* nestedVirtualizationArguments;
-        const resolvedTemplate = yield* resolveTemplate(
-          vmTemplate,
-          userConfig.configPath
-        );
-        yield* ensureWindowsQemuAvailable;
-        if (resolvedTemplate.cache === undefined || shouldCreateFresh) {
-          yield* lima.run(
-            [
-              "start",
-              "--tty=false",
-              "--progress",
-              `--name=${vmName}`,
-              `--cpus=${newVmCpuCount}`,
-              `--memory=${newVmMemorySize}`,
-              ...mountArguments,
-              ...platformCreateArguments,
-              ...nestedArguments,
-              ...resolvedTemplate.arguments,
-            ],
-            {
+            yield* lima.assertIsolated(vmName);
+            const statusCommand = ChildProcess.make(
+              userConfig.lima.executable,
+              ["list", vmName, "--format={{.Status}}"],
+              {
+                env: {
+                  ...Bun.env,
+                  LIMA_HOME: userConfig.lima.home,
+                  LIMA_TEMPLATES_PATH: path.join(
+                    userConfig.lima.runtime,
+                    "share",
+                    "lima",
+                    "templates"
+                  ),
+                },
+                extendEnv: true,
+              }
+            );
+            const status = yield* processSpawner.string(statusCommand).pipe(
+              Effect.map((output) => output.trim()),
+              Effect.flatMap(Schema.decodeUnknownEffect(Schema.NonEmptyString))
+            );
+
+            if (status !== "Stopped") {
+              return yield* new VmAlreadyExistsError({ name: vmName });
+            }
+
+            const cpuArguments = Option.isSome(cpuCount)
+              ? [`--cpus=${cpuCount.value}`]
+              : [];
+            const memoryArguments = Option.isSome(memorySize)
+              ? [`--memory=${memorySize.value}`]
+              : [];
+            const networkArguments = limaNetworkArguments(
+              yield* readVmNetwork(userConfig.lima.home, vmName)
+            );
+            yield* ensureWindowsQemuAvailable;
+            yield* lima.run(
+              [
+                "edit",
+                "--tty=false",
+                ...mountArguments,
+                ...cpuArguments,
+                ...memoryArguments,
+                ...networkArguments,
+                vmName,
+              ],
+              {
+                progress: {
+                  failureMessage:
+                    "Failed to update virtual machine configuration",
+                  initialMessage: "Updating virtual machine configuration…",
+                },
+              }
+            );
+            yield* lima.run(["start", "--tty=false", "--progress", vmName], {
               progress: {
                 failureMessage: "Failed to start virtual machine",
                 initialMessage: "Starting virtual machine…",
               },
+            });
+          } else {
+            const newVmCpuCount = Option.isSome(cpuCount)
+              ? cpuCount.value
+              : yield* defaultCpuCount;
+            const newVmMemorySize = Option.isSome(memorySize)
+              ? memorySize.value
+              : DEFAULT_MEMORY_SIZE_GIB;
+            const nestedArguments = yield* nestedVirtualizationArguments;
+            const resolvedTemplate = yield* resolveTemplate(
+              vmTemplate,
+              userConfig.configPath
+            );
+            yield* ensureWindowsQemuAvailable;
+            if (resolvedTemplate.cache === undefined || shouldCreateFresh) {
+              yield* lima.run(
+                [
+                  "start",
+                  "--tty=false",
+                  "--progress",
+                  `--name=${vmName}`,
+                  `--cpus=${newVmCpuCount}`,
+                  `--memory=${newVmMemorySize}`,
+                  ...mountArguments,
+                  ...limaNetworkArguments([]),
+                  ...platformCreateArguments,
+                  ...nestedArguments,
+                  ...resolvedTemplate.arguments,
+                ],
+                {
+                  progress: {
+                    failureMessage: "Failed to start virtual machine",
+                    initialMessage: "Starting virtual machine…",
+                  },
+                }
+              );
+            } else {
+              const cacheKey = makeVmBaseCacheKey(
+                resolvedTemplate.cache.name,
+                resolvedTemplate.cache.fingerprint,
+                [...platformCreateArguments, ...nestedArguments]
+              );
+              yield* createVmFromBase({
+                cacheKey,
+                configPath: userConfig.configPath,
+                cpuCount: newVmCpuCount,
+                limaHome: userConfig.lima.home,
+                memorySize: newVmMemorySize,
+                mountArguments,
+                progressStartedAt: startedAt,
+                templateArguments: resolvedTemplate.arguments,
+                vmArguments: [...platformCreateArguments, ...nestedArguments],
+                vmName,
+              });
             }
-          );
-        } else {
-          const cacheKey = makeVmBaseCacheKey(
-            resolvedTemplate.cache.name,
-            resolvedTemplate.cache.fingerprint,
-            [...platformCreateArguments, ...nestedArguments]
-          );
-          yield* createVmFromBase({
-            cacheKey,
-            configPath: userConfig.configPath,
-            cpuCount: newVmCpuCount,
-            limaHome: userConfig.lima.home,
-            memorySize: newVmMemorySize,
-            mountArguments,
-            progressStartedAt: startedAt,
-            templateArguments: resolvedTemplate.arguments,
-            vmArguments: [...platformCreateArguments, ...nestedArguments],
-            vmName,
-          });
-        }
-      }
+          }
 
-      yield* scheduleVmTtl(userConfig.lima.home, vmName, vmTtl);
+          yield* scheduleVmTtl(userConfig.lima.home, vmName, vmTtl);
 
-      const action = exists ? "Started" : "Created";
-      const finishedAt = yield* Clock.currentTimeMillis;
-      const elapsedSeconds = Math.max(
-        0,
-        Math.round((finishedAt - startedAt) / 1000)
-      );
-      yield* Console.log(
-        `✔ ${action} ${vmName} in ${elapsedSeconds}s (TTL: ${vmTtl.value})`
-      );
-    })
+          const action = exists ? "Started" : "Created";
+          const finishedAt = yield* Clock.currentTimeMillis;
+          const elapsedSeconds = Math.max(
+            0,
+            Math.round((finishedAt - startedAt) / 1000)
+          );
+          yield* Console.log(
+            `✔ ${action} ${vmName} in ${elapsedSeconds}s (TTL: ${vmTtl.value})`
+          );
+        })
+      )
+    )
 ).pipe(
   Command.withDescription("Create a new VM or restart a stopped VM"),
   Command.withExamples([

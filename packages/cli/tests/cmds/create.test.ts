@@ -6,6 +6,7 @@ import { TestClock } from "effect/testing";
 import { describe } from "vitest";
 
 import { VM_BASE_PREFIX } from "../../src/lib/vm-base-cache";
+import { limaNetworkArguments } from "../../src/lib/vm-network";
 import { makeCliHarness } from "../helpers/cli";
 
 const supportedNestedVirtualizationOutputs =
@@ -317,6 +318,7 @@ describe("create", () => {
         "--tty=false",
         "--mount-only=./src",
         "--mount-only=./config:w",
+        ...limaNetworkArguments([]),
         "dev",
       ]);
     })
@@ -444,6 +446,7 @@ describe("create", () => {
             "--mount-none",
             "--cpus=6",
             "--memory=3",
+            ...limaNetworkArguments([]),
             "dev",
           ],
           progress: {
@@ -500,7 +503,13 @@ describe("create", () => {
 
       expect(harness.calls[0]).toEqual({
         acceptableExitCodes: undefined,
-        args: ["edit", "--tty=false", "--mount-none", "dev"],
+        args: [
+          "edit",
+          "--tty=false",
+          "--mount-none",
+          ...limaNetworkArguments([]),
+          "dev",
+        ],
         progress: {
           failureMessage: "Failed to update virtual machine configuration",
           initialMessage: "Updating virtual machine configuration…",

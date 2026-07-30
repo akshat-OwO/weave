@@ -1,12 +1,17 @@
 import { expect, test } from "bun:test";
 
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 
 const cliEntry = `${import.meta.dir}/../../src/index.ts`;
 const ttlSeconds = 15;
+const setupTtl = "15m";
 const runningCheckDelay = "5 seconds";
 const statusPollDelay = "1 second";
 const maximumStatusPolls = 60;
+const vitePollDelay = "1 second";
+const maximumVitePolls = 60;
+const parentViteUrl = "http://127.0.0.1:3005";
+const viteAppTitle = "<title>vite-app</title>";
 const integrationTestTimeoutMillis = 10 * 60 * 1000;
 
 interface CommandResult {
@@ -111,8 +116,54 @@ const waitForStopped = Effect.fn("weave/tests/integration/waitForStopped")(
   }
 );
 
+const waitForVite = Effect.fn("weave/tests/integration/waitForVite")(
+  function* waitForViteHandler(name: string) {
+    for (let poll = 0; poll < maximumVitePolls; poll += 1) {
+      const response = yield* Effect.tryPromise({
+        catch: () => new Error(`Vite was not ready at ${parentViteUrl}`),
+        try: () =>
+          fetch(parentViteUrl, {
+            cache: "no-store",
+            signal: AbortSignal.timeout(2000),
+          }).then(async (result) => ({
+            body: await result.text(),
+            ok: result.ok,
+          })),
+      }).pipe(Effect.option);
+
+      if (
+        Option.isSome(response) &&
+        response.value.ok &&
+        response.value.body.includes(viteAppTitle)
+      ) {
+        return response.value.body;
+      }
+
+      yield* Effect.sleep(vitePollDelay);
+    }
+
+    const { stdout: viteLog } = yield* runWeave([
+      "shell",
+      name,
+      "cat /tmp/weave-vite.log 2>/dev/null || true",
+    ]);
+    return yield* Effect.fail(
+      new Error(
+        `Vite did not respond at ${parentViteUrl} after ${maximumVitePolls} polls:\n${viteLog.trim()}`
+      )
+    );
+  }
+);
+
+const startVite = (name: string) =>
+  runWeave([
+    "shell",
+    name,
+    "cd ~/vite-app && setsid --fork npm run dev -- --host 127.0.0.1 --port 5173 </dev/null >/tmp/weave-vite.log 2>&1",
+  ]);
+
 test(
-  "stops a real Lima VM when its TTL expires",
+  "publishes a Vite app and stops the VM when its TTL expires",
   async () => {
     const vmName = `weave-ttl-${process.pid}-${Date.now().toString(36)}`;
     const program = Effect.acquireUseRelease(
@@ -123,11 +174,25 @@ test(
             "create",
             name,
             "--cpus=1",
-            `--ttl=${ttlSeconds}s`,
+            `--ttl=${setupTtl}`,
+            "--template=node",
           ]);
           expect(creation.stdout).toContain("Cloning cached environment…");
-          const tooling = yield* runWeave(["shell", name, "nerdctl --version"]);
-          expect(tooling.stdout).toMatch(/^nerdctl version \S+/mu);
+          yield* runWeave([
+            "shell",
+            name,
+            "npm_config_yes=true npm create vite@9.1.2 vite-app -- --template vanilla && cd vite-app && npm install",
+          ]);
+          yield* runWeave(["port", "add", name, "3005:5173"]);
+          const publishedPorts = yield* runWeave(["port", "ls", name]);
+          expect(publishedPorts.stdout).toContain("127.0.0.1:3005\t5173\ttcp");
+          yield* startVite(name);
+          expect(yield* waitForVite(name)).toContain(viteAppTitle);
+
+          yield* runWeave(["stop", name]);
+          yield* runWeave(["start", name, `--ttl=${ttlSeconds}s`]);
+          yield* startVite(name);
+          expect(yield* waitForVite(name)).toContain(viteAppTitle);
           yield* Effect.sleep(runningCheckDelay);
           expect(yield* getVmStatus(name)).toBe("Running");
           expect(yield* getVmRow(name)).toMatch(/\s\d+s\s+\S+$/u);

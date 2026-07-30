@@ -8,6 +8,7 @@ import {
   withVmBaseLock,
   writeVmBaseMetadata,
 } from "./vm-base-cache";
+import { limaNetworkArguments } from "./vm-network";
 
 interface CreateVmFromBaseOptions {
   readonly cacheKey: string;
@@ -92,6 +93,7 @@ const prepareVmBase = Effect.fn("weave/lib/prepareVmBase")(
           `--cpus=${options.cpuCount}`,
           "--memory=2",
           "--mount-none",
+          ...limaNetworkArguments([]),
           ...options.vmArguments,
           ...options.templateArguments,
         ],
@@ -150,6 +152,7 @@ export const createVmFromBase = Effect.fn("weave/lib/createVmFromBase")(
               `--cpus=${options.cpuCount}`,
               `--memory=${options.memorySize}`,
               ...options.mountArguments,
+              ...limaNetworkArguments([]),
               baseName,
               options.vmName,
             ],
