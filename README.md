@@ -8,6 +8,7 @@ Each VM starts with host-directory mounts disabled by default, so commands run i
 
 - Disposable VMs with a configurable time to live (TTL)
 - No host paths mounted by default, with opt-in selective mounts
+- No parent-accessible application ports by default, with explicit TCP mappings
 - Built-in Node.js and Python templates
 - Support for custom Lima YAML templates
 - Interactive access and one-off command execution
@@ -119,6 +120,9 @@ A template and `--fresh` only affect newly created VMs, not restarted VMs.
 | `weave create <name> [--cpus <count>] [--memory <GiB>] [--ttl <duration>] [--template <name-or-path>] [--fresh] [--mount <directory>...]` | Create a new VM or restart a stopped one |
 | `weave start <name> [--ttl <duration>] [--mount <directory>...]` | Start a stopped VM with selected host mounts |
 | `weave ls` | List VMs, their status, and remaining TTL (`list` is an alias) |
+| `weave port add <name> <parent-port>:<guest-port>` | Publish a guest TCP port on parent localhost |
+| `weave port remove <name> <parent-port>` | Remove a published port (`rm` is an alias) |
+| `weave port ls <name>` | List published ports (`list` is an alias) |
 | `weave ssh <name>` | Open an interactive shell in a running VM |
 | `weave shell <name> "<command>"` | Run a command in a running VM |
 | `weave cp <name> <file>... [--o <guest-directory>]` | Copy host files into a VM (guest home by default) |
@@ -133,7 +137,9 @@ Run `weave <command> --help` for command-specific examples and options.
 
 On macOS and Linux, Weave stores its bundled runtime, templates, and VM state under `~/weave`. On Windows, it uses `%APPDATA%\weave`.
 
-Weave passes `--mount-none` when `create` or `start` is invoked without a `--mount` flag. Pass one or more existing directories after `--mount` to expose only those host directories; append `:w` for writable access. Each invocation replaces the previous mount set, while CPU, memory, and disk configuration remain unchanged unless explicitly updated. VMs retain their own virtual disk when stopped and continue to have network access. Use `weave kill <name>` when the disk and its data are no longer needed.
+Weave passes `--mount-none` when `create` or `start` is invoked without a `--mount` flag. Pass one or more existing directories after `--mount` to expose only those host directories; append `:w` for writable access. Each invocation replaces the previous mount set, while CPU, memory, and disk configuration remain unchanged unless explicitly updated. VMs retain their own virtual disk when stopped and continue to have outbound network access. Use `weave kill <name>` when the disk and its data are no longer needed.
+
+Guest application ports are not accessible from the parent unless explicitly published. For example, `weave port add dev 8080:3000` maps `127.0.0.1:8080` on the parent to TCP port `3000` in `dev`. Add as many mappings as needed, inspect them with `weave port ls dev`, and remove one with `weave port remove dev 8080`. Port changes persist while the VM is stopped. Because Lima cannot reload forwarding rules for a running VM, changing a running VM's mappings briefly restarts it while preserving its original TTL expiry.
 
 Use `weave cp dev ./package.json ./src/index.ts --o /dev` to copy host files onto the VM's own disk. Omit `--o` to copy them to the guest user's home directory (`~`). Changes to those guest copies do not affect the original host files. Weave can copy into protected guest directories such as `/dev` by staging the files and installing them with guest-side elevated permissions.
 
@@ -166,4 +172,4 @@ The regular test suite uses Vitest and does not start real VMs. Run the opt-in T
 bun run --cwd packages/cli test:integration
 ```
 
-The integration test creates a uniquely named VM, verifies that it remains running before its TTL, waits for it to stop after expiry, and deletes it during cleanup.
+The integration test creates a uniquely named Node.js VM, scaffolds and starts a Vite application on guest port `5173`, verifies it through parent port `3005`, confirms that the VM remains running before its TTL, waits for it to stop after expiry, and deletes it during cleanup.

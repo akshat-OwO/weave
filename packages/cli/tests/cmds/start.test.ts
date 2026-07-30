@@ -2,6 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { describe } from "vitest";
 
+import { limaNetworkArguments } from "../../src/lib/vm-network";
 import { makeCliHarness } from "../helpers/cli";
 
 describe("start", () => {
@@ -15,6 +16,14 @@ describe("start", () => {
       yield* harness.run(["start", "dev", "--ttl", "1h"]);
 
       expect(harness.calls).toEqual([
+        {
+          acceptableExitCodes: undefined,
+          args: ["edit", "--tty=false", ...limaNetworkArguments([]), "dev"],
+          progress: {
+            failureMessage: "Failed to update port restrictions for dev",
+            initialMessage: "Updating port restrictions for dev…",
+          },
+        },
         {
           acceptableExitCodes: undefined,
           args: ["start", "--tty=false", "--progress", "--mount-none", "dev"],
@@ -108,7 +117,7 @@ describe("start", () => {
 
       yield* harness.run(["start", "dev", "--mount", "./src", "./config:w"]);
 
-      expect(harness.calls[0]?.args).toEqual([
+      expect(harness.calls[1]?.args).toEqual([
         "start",
         "--tty=false",
         "--progress",

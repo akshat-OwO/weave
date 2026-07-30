@@ -1,10 +1,10 @@
 import path from "node:path";
 
-import type { PlatformError } from "effect";
 import { Clock, Effect, FileSystem, Option, Schema } from "effect";
 
 import cliPackage from "../../package.json" with { type: "json" };
 import { LIMA_VERSION } from "../services/user-config";
+import { withFileLock } from "./file-lock";
 
 const VmBaseMetadata = Schema.Struct({
   builtAt: Schema.Number,
@@ -17,21 +17,8 @@ const VmBaseMetadataJson = Schema.fromJsonString(VmBaseMetadata);
 
 export type VmBaseMetadata = typeof VmBaseMetadata.Type;
 
-const VmBaseLockOwner = Schema.Struct({
-  acquiredAt: Schema.Number,
-  pid: Schema.Number,
-  token: Schema.String,
-});
-
-const VmBaseLockOwnerJson = Schema.fromJsonString(VmBaseLockOwner);
-
-type VmBaseLockOwner = typeof VmBaseLockOwner.Type;
-
 export const VM_BASE_PREFIX = "wvbase-";
 export const VM_BASE_FRESHNESS_MILLIS = 3 * 24 * 60 * 60 * 1000;
-const VM_BASE_LOCK_RETRY_MILLIS = 250;
-const VM_BASE_LOCK_STALE_MILLIS = 2 * 60 * 60 * 1000;
-let vmBaseLockSequence = 0;
 
 const vmBackend = process.platform === "darwin" ? "vz" : "qemu";
 
@@ -63,9 +50,6 @@ const metadataDirectory = (configPath: string): string =>
 
 const vmBaseLockPath = (configPath: string, cacheKey: string): string =>
   path.join(metadataDirectory(configPath), `${cacheKey}.lock`);
-
-const vmBaseLockOwnerPath = (lockPath: string): string =>
-  path.join(lockPath, "owner.json");
 
 export const vmBaseMetadataPath = (
   configPath: string,
@@ -164,130 +148,11 @@ export const readVmBaseNames = Effect.fn(
   );
 });
 
-const isAlreadyExists = (error: PlatformError.PlatformError): boolean =>
-  error.reason._tag === "AlreadyExists";
-
-const readVmBaseLockOwner = Effect.fn(
-  "weave/lib/vmBaseCache/readVmBaseLockOwner"
-)(function* readVmBaseLockOwnerHandler(lockPath: string) {
-  const fs = yield* FileSystem.FileSystem;
-  return yield* fs.readFileString(vmBaseLockOwnerPath(lockPath)).pipe(
-    Effect.map(Schema.decodeUnknownOption(VmBaseLockOwnerJson)),
-    Effect.catch(() => Effect.succeed(Option.none<VmBaseLockOwner>()))
-  );
-});
-
-const isProcessAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-type AcquiredVmBaseLock = VmBaseLockOwner & { readonly lockPath: string };
-
-const tryAcquireVmBaseLock = (
-  configPath: string,
-  cacheKey: string
-): Effect.Effect<
-  Option.Option<AcquiredVmBaseLock>,
-  PlatformError.PlatformError,
-  FileSystem.FileSystem
-> =>
-  Effect.gen(function* tryAcquireVmBaseLockHandler() {
-    const fs = yield* FileSystem.FileSystem;
-    const directory = metadataDirectory(configPath);
-    const lockPath = vmBaseLockPath(configPath, cacheKey);
-    yield* fs.makeDirectory(directory, { recursive: true });
-
-    const acquired = yield* fs.makeDirectory(lockPath).pipe(
-      Effect.as(true),
-      Effect.catch((error) =>
-        isAlreadyExists(error) ? Effect.succeed(false) : Effect.fail(error)
-      )
-    );
-    if (acquired) {
-      const acquiredAt = yield* Clock.currentTimeMillis;
-      vmBaseLockSequence += 1;
-      const owner = {
-        acquiredAt,
-        lockPath,
-        pid: process.pid,
-        token: `${process.pid}-${acquiredAt}-${vmBaseLockSequence}`,
-      };
-      const writeOwner = fs.writeFileString(
-        vmBaseLockOwnerPath(lockPath),
-        Schema.encodeSync(VmBaseLockOwnerJson)(owner)
-      );
-      yield* writeOwner.pipe(
-        Effect.onError(() =>
-          fs
-            .remove(lockPath, { force: true, recursive: true })
-            .pipe(Effect.ignore)
-        )
-      );
-      return Option.some(owner);
-    }
-
-    const owner = yield* readVmBaseLockOwner(lockPath);
-    const lockInfo = yield* fs.stat(lockPath).pipe(Effect.option);
-    const lockModifiedAt = lockInfo.pipe(Option.flatMap(({ mtime }) => mtime));
-    const currentTimeMillis = yield* Clock.currentTimeMillis;
-    const ownerIsDead =
-      Option.isSome(owner) && !isProcessAlive(owner.value.pid);
-    const ownerWasNeverRecorded =
-      Option.isNone(owner) &&
-      Option.isSome(lockModifiedAt) &&
-      currentTimeMillis - lockModifiedAt.value.getTime() >
-        VM_BASE_LOCK_STALE_MILLIS;
-    yield* ownerIsDead || ownerWasNeverRecorded
-      ? fs.remove(lockPath, { force: true, recursive: true })
-      : Effect.void;
-
-    return Option.none<AcquiredVmBaseLock>();
-  }).pipe(Effect.uninterruptible);
-
-const releaseVmBaseLock = (owner: AcquiredVmBaseLock) =>
-  FileSystem.FileSystem.use((fs) =>
-    readVmBaseLockOwner(owner.lockPath).pipe(
-      Effect.flatMap((currentOwner) =>
-        Option.isSome(currentOwner) && currentOwner.value.token === owner.token
-          ? fs.remove(owner.lockPath, { force: true, recursive: true })
-          : Effect.void
-      ),
-      Effect.ignore
-    )
-  );
-
 export const withVmBaseLock = <A, E, R>(
   configPath: string,
   cacheKey: string,
   effect: Effect.Effect<A, E, R>
-): Effect.Effect<
-  A,
-  E | PlatformError.PlatformError,
-  R | FileSystem.FileSystem
-> =>
-  Effect.suspend(() =>
-    tryAcquireVmBaseLock(configPath, cacheKey).pipe(
-      Effect.flatMap(
-        Option.match({
-          onNone: () =>
-            Effect.sleep(VM_BASE_LOCK_RETRY_MILLIS).pipe(
-              Effect.andThen(withVmBaseLock(configPath, cacheKey, effect))
-            ),
-          onSome: (owner) =>
-            Effect.acquireUseRelease(
-              Effect.succeed(owner),
-              () => effect,
-              releaseVmBaseLock
-            ),
-        })
-      )
-    )
-  );
+) => withFileLock(vmBaseLockPath(configPath, cacheKey), effect);
 
 export const isVmBaseFresh = (
   metadata: VmBaseMetadata,

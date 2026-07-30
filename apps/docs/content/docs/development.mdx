@@ -44,8 +44,10 @@ Build all packages and applications:
 bunx turbo build
 ```
 
-The regular CLI test suite uses Vitest and does not start real VMs. The opt-in TTL integration test requires a host with working virtualization:
+The regular CLI test suite uses Vitest and does not start real VMs. The opt-in integration test requires a host with working virtualization and network access:
 
 ```sh
 bun run --cwd packages/cli test:integration
 ```
+
+It creates a Node.js VM, scaffolds and starts a Vite application on guest port `5173`, verifies the application through parent port `3005`, then confirms that the VM stops when its TTL expires.

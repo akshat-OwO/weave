@@ -4,6 +4,7 @@ import { cp } from "./cp";
 import { create } from "./create";
 import { kill } from "./kill";
 import { list } from "./list";
+import { port } from "./port";
 import { shell } from "./shell";
 import { ssh } from "./ssh";
 import { start } from "./start";
@@ -18,6 +19,7 @@ export const weave = Command.make("weave").pipe(
     cp,
     start,
     list,
+    port,
     stop,
     kill,
     shell,

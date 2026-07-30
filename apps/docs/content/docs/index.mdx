@@ -5,12 +5,12 @@ description: Create disposable, sandboxed Linux virtual machines from your termi
 
 Weave is a small CLI for creating short-lived Linux virtual machines. It wraps [Lima](https://lima-vm.io/) with secure defaults, automatic expiry, and a compact command set.
 
-Each VM starts without host-directory mounts by default. Commands run inside the guest instead of against files on your host unless selected paths are explicitly mounted, while the guest keeps network access and its own virtual disk.
+Each VM starts without host-directory mounts or parent-accessible application ports by default. Commands run inside the guest instead of against files on your host unless selected paths are explicitly mounted, while the guest keeps outbound network access and its own virtual disk.
 
 ## Why Weave?
 
 - **Disposable by design.** Every VM has a time to live (TTL) and stops automatically when it expires.
-- **Isolated by default.** Weave creates and starts VMs without host mounts unless selected paths are explicitly provided.
+- **Isolated by default.** Weave creates and starts VMs without host mounts or published application ports unless they are explicitly provided.
 - **Focused workflow.** Create, inspect, connect to, stop, restart, and delete VMs with a small set of commands.
 - **Useful templates.** Start with Node.js, Python, or a custom Lima YAML configuration.
 - **Cross-platform builds.** Native executables are produced for macOS, Linux, and Windows on x64 and ARM64.

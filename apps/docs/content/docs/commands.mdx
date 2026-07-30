@@ -47,6 +47,29 @@ Open an interactive shell in a running VM:
 weave ssh <name>
 ```
 
+## `port`
+
+Publish a guest TCP port on parent localhost:
+
+```sh
+weave port add <name> <parent-port>:<guest-port>
+```
+
+For example, expose an application listening on guest port `3000` through parent port `8080`:
+
+```sh
+weave port add dev 8080:3000
+```
+
+Mappings bind to `127.0.0.1` on the parent and persist across stops and starts. Multiple mappings can be added to the same VM. List or remove mappings with:
+
+```sh
+weave port ls dev
+weave port remove dev 8080
+```
+
+`weave port list` and `weave port rm` are aliases. Changing mappings on a running VM briefly restarts it because Lima cannot reload forwarding rules in place. Weave preserves the VM's existing absolute TTL expiry during that restart.
+
 ## `shell`
 
 Run a command in a running VM:

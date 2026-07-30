@@ -312,7 +312,12 @@ export const makeCliHarness = (options: CliHarnessOptions = {}): CliHarness => {
     writeFileString: (path, contents) =>
       Effect.sync(() => {
         storedFiles.set(path, contents);
-        fileWrites.push({ contents, path });
+        const isVmLockOwner =
+          path.startsWith(`${configPath}/locks/`) &&
+          path.endsWith("/owner.json");
+        if (!isVmLockOwner) {
+          fileWrites.push({ contents, path });
+        }
       }),
   });
   const processSpawner = ChildProcessSpawner.ChildProcessSpawner.of({
