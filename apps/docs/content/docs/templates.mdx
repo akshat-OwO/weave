@@ -1,6 +1,6 @@
 ---
 title: Templates
-description: Start environments with Node.js, Python, or custom Lima configuration.
+description: Start environments with built-in tooling or custom Lima configuration.
 ---
 
 ## Node.js
@@ -28,6 +28,125 @@ weave create custom-dev --template ./templates/custom.yaml
 ```
 
 Relative paths are resolved from the directory where you run Weave.
+
+## Coding agent templates
+
+The following examples create Ubuntu VMs with a coding agent installed. Save the YAML you want as a template file, render your API key into a separate file, and pass that rendered file to Weave.
+
+<Callout type="warn" title="API keys are stored in the VM">
+  Rendering one of these examples places the key in the rendered YAML and in the
+  VM environment. Restrict the rendered file to your user, do not commit it, and
+  delete it when you no longer need it.
+</Callout>
+
+### Codex CLI
+
+Save this as `codex.yaml.tmpl`:
+
+```yaml
+minimumLimaVersion: 2.2.0
+
+base:
+  - template:default
+
+env:
+  OPENAI_API_KEY: "${OPENAI_API_KEY}"
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y ca-certificates curl git
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eu -o pipefail
+      export PATH="${HOME}/.local/bin:${PATH}"
+
+      curl -fsSL https://chatgpt.com/codex/install.sh | sh
+      printenv OPENAI_API_KEY | codex login --with-api-key
+
+      if ! grep -Fq 'export PATH="$HOME/.local/bin:$PATH"' "${HOME}/.profile" 2>/dev/null; then
+        printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"${HOME}/.profile"
+      fi
+
+probes:
+  - script: |
+      #!/bin/bash
+      export PATH="${HOME}/.local/bin:${PATH}"
+      codex --version
+      codex login status
+    hint: Codex CLI could not be installed or authenticated.
+```
+
+Export your key, render only that variable, and create the VM:
+
+```sh
+: "${OPENAI_API_KEY:?Set OPENAI_API_KEY first}"
+envsubst '$OPENAI_API_KEY' <codex.yaml.tmpl >codex.yaml
+chmod 600 codex.yaml
+weave create codex-dev --template ./codex.yaml
+```
+
+Codex requires an explicit API-key login. The provisioning step pipes `OPENAI_API_KEY` to the supported login command without printing the key. See the [Codex CLI documentation](https://learn.chatgpt.com/docs/codex/cli#getting-started) for other installation and sign-in options.
+
+### Claude Code
+
+Save this as `claude-code.yaml.tmpl`:
+
+```yaml
+minimumLimaVersion: 2.2.0
+
+base:
+  - template:default
+
+env:
+  ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y ca-certificates curl git
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eu -o pipefail
+
+      curl -fsSL https://claude.ai/install.sh | bash
+
+      if ! grep -Fq 'export PATH="$HOME/.local/bin:$PATH"' "${HOME}/.profile" 2>/dev/null; then
+        printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"${HOME}/.profile"
+      fi
+
+probes:
+  - script: |
+      #!/bin/bash
+      export PATH="${HOME}/.local/bin:${PATH}"
+      claude --version
+    hint: Claude Code could not be installed.
+```
+
+Export your key, render only that variable, and create the VM:
+
+```sh
+: "${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY first}"
+envsubst '$ANTHROPIC_API_KEY' <claude-code.yaml.tmpl >claude-code.yaml
+chmod 600 claude-code.yaml
+weave create claude-dev --template ./claude-code.yaml
+```
+
+Claude Code detects `ANTHROPIC_API_KEY` when it starts and asks you to approve the key instead of showing the normal login prompt. See the [Claude Code documentation](https://code.claude.com/docs/en/overview) for other installation and authentication options.
+
+`envsubst` is provided by the `gettext` package on Linux and by `brew install gettext` on macOS.
 
 ## Cached bases
 
