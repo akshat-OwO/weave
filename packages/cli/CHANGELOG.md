@@ -1,5 +1,13 @@
 # @weave/cli
 
+## 0.1.0
+
+### Minor Changes
+
+- [#28](https://github.com/akshat-OwO/weave/pull/28) [`eaea3b0`](https://github.com/akshat-OwO/weave/commit/eaea3b09a9906da1f4c6a133fd6ae504bd73af1d) Thanks [@akshat-OwO](https://github.com/akshat-OwO)! - Deny parent-to-guest application access by default and add persistent Docker-style TCP port mappings.
+
+- [#30](https://github.com/akshat-OwO/weave/pull/30) [`b6f7c71`](https://github.com/akshat-OwO/weave/commit/b6f7c71ae454c8bb52cfb04238068e69e65ab3f2) Thanks [@akshat-OwO](https://github.com/akshat-OwO)! - Embed version-matched agent instructions and add an installable Weave discovery skill.
+
 ## 0.0.5
 
 ### Patch Changes
